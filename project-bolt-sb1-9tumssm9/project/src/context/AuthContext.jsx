@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import { authApi } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -10,18 +10,16 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      checkAuth(token);
+      checkAuth();
     } else {
       setLoading(false);
     }
   }, []);
 
-  const checkAuth = async (token) => {
+  const checkAuth = async () => {
     try {
-      const response = await axios.get('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUser(response.data);
+      const userData = await authApi.getProfile();
+      setUser(userData);
     } catch (error) {
       localStorage.removeItem('token');
     } finally {
@@ -31,25 +29,21 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const response = await axios.post('/api/auth/login', {
-        username: email,
-        password
-      });
-      const { access_token } = response.data;
+      const { access_token } = await authApi.login(email, password);
       localStorage.setItem('token', access_token);
-      await checkAuth(access_token);
+      await checkAuth();
       return true;
     } catch (error) {
-      throw new Error(error.response?.data?.detail || 'Login failed');
+      throw new Error(error.message);
     }
   };
 
   const register = async (userData) => {
     try {
-      await axios.post('/api/auth/register', userData);
+      await authApi.register(userData);
       return true;
     } catch (error) {
-      throw new Error(error.response?.data?.detail || 'Registration failed');
+      throw new Error(error.message);
     }
   };
 

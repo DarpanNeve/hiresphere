@@ -1,25 +1,48 @@
-from sqlalchemy.orm import Session
-from app.models.interview import Interview
+from datetime import datetime
+from bson import ObjectId
+from app.db.mongodb import db
 from app.schemas.interview import InterviewCreate
-from app.db.session import get_db
 
-async def create_interview(interview_in: InterviewCreate, user_id: int, db: Session = next(get_db())):
-    interview = Interview(
-        user_id=user_id,
-        topic=interview_in.topic,
-        duration=interview_in.duration,
-        knowledge_score=interview_in.knowledge_score,
-        communication_score=interview_in.communication_score,
-        confidence_score=interview_in.confidence_score,
-        feedback=interview_in.feedback
-    )
-    db.add(interview)
-    db.commit()
-    db.refresh(interview)
-    return interview
 
-async def get_user_interviews(user_id: int, db: Session = next(get_db())):
-    return db.query(Interview).filter(Interview.user_id == user_id).order_by(Interview.created_at.desc()).all()
+async def create_interview(interview_in: InterviewCreate, user_id: str):
+    try:
+        interview_data = {
+            "user_id": user_id,
+            "topic": interview_in.topic,
+            "duration": interview_in.duration,
+            "knowledge_score": interview_in.knowledge_score,
+            "communication_score": interview_in.communication_score,
+            "confidence_score": interview_in.confidence_score,
+            "feedback": interview_in.feedback,
+            "created_at": datetime.utcnow()
+        }
 
-async def get_interview(interview_id: int, db: Session = next(get_db())):
-    return db.query(Interview).filter(Interview.id == interview_id).first()
+        result = await db.database.interviews.insert_one(interview_data)
+        interview_data["id"] = str(result.inserted_id)
+        return interview_data
+    except Exception as e:
+        raise Exception(f"Failed to create interview: {str(e)}")
+
+
+async def get_user_interviews(user_id: str):
+    try:
+        cursor = db.database.interviews.find({"user_id": user_id}).sort("created_at", -1)
+        interviews = []
+        async for doc in cursor:
+            doc["id"] = str(doc["_id"])
+            del doc["_id"]
+            interviews.append(doc)
+        return interviews
+    except Exception as e:
+        raise Exception(f"Failed to fetch user interviews: {str(e)}")
+
+
+async def get_interview(interview_id: str):
+    try:
+        interview = await db.database.interviews.find_one({"_id": ObjectId(interview_id)})
+        if interview:
+            interview["id"] = str(interview["_id"])
+            del interview["_id"]
+        return interview
+    except Exception as e:
+        raise Exception(f"Failed to fetch interview: {str(e)}")

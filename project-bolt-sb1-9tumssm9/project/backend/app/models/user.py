@@ -1,13 +1,41 @@
-from sqlalchemy import Column, Integer, String, DateTime
-from sqlalchemy.sql import func
-from app.db.base_class import Base
+from datetime import datetime
+from bson import ObjectId
 
-class User(Base):
-    __tablename__ = "users"
+class User:
+    def __init__(
+        self,
+        id: ObjectId,
+        email: str,
+        hashed_password: str,
+        full_name: str = None,
+        created_at: datetime = None,
+        updated_at: datetime = None
+    ):
+        self.id = id
+        self.email = email
+        self.hashed_password = hashed_password
+        self.full_name = full_name
+        self.created_at = created_at or datetime.utcnow()
+        self.updated_at = updated_at or datetime.utcnow()
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    full_name = Column(String)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    @classmethod
+    def from_db(cls, data: dict):
+        if data is None:
+            return None
+        return cls(
+            id=data["_id"],
+            email=data["email"],
+            hashed_password=data["hashed_password"],
+            full_name=data.get("full_name"),
+            created_at=data.get("created_at"),
+            updated_at=data.get("updated_at")
+        )
+
+    def to_db(self) -> dict:
+        return {
+            "email": self.email,
+            "hashed_password": self.hashed_password,
+            "full_name": self.full_name,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at
+        }
