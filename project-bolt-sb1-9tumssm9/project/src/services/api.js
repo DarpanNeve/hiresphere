@@ -77,6 +77,7 @@ export const interviewApi = {
 
   submitResponse: async (interviewId, response) => {
     try {
+      console.log(response);
       const result = await api.post(`/feedback/${interviewId}/submit`, {
         response,
       });

@@ -16,11 +16,64 @@ const Interview = () => {
   const [questions, setQuestions] = useState([]);
   const [topic, setTopic] = useState("");
   const [videoFrames, setVideoFrames] = useState([]);
+  const [microphoneAccess, setMicrophoneAccess] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
   const recognition = useRef(null);
   const webcamRef = useRef(null);
   const videoInterval = useRef(null);
+
+  const initializeSpeechRecognition = async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicrophoneAccess(true);
+
+      if (window.webkitSpeechRecognition) {
+        recognition.current = new window.webkitSpeechRecognition();
+        recognition.current.continuous = true;
+        recognition.current.interimResults = true;
+
+        recognition.current.onresult = (event) => {
+          const transcript = Array.from(event.results)
+            .map((result) => result[0].transcript)
+            .join("");
+          setResponses((prev) => {
+            const newResponses = [...prev];
+            newResponses[questionIndex] = transcript;
+            return newResponses;
+          });
+        };
+
+        recognition.current.onerror = (event) => {
+          console.error("Speech recognition error:", event.error);
+          if (event.error === "not-allowed") {
+            setError(
+              "Microphone access was denied. Please check your browser permissions."
+            );
+          } else {
+            setError(`Speech recognition error: ${event.error}`);
+          }
+          recognition.current?.stop();
+        };
+
+        recognition.current.onend = () => {
+          if (isRecording) {
+            recognition.current?.start();
+          }
+        };
+      } else {
+        setError(
+          "Speech recognition is not supported in your browser. Please use Chrome or Edge."
+        );
+      }
+    } catch (err) {
+      console.error("Microphone access error:", err);
+      setError(
+        "Failed to access microphone. Please check your browser permissions."
+      );
+      setMicrophoneAccess(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) {
@@ -28,30 +81,7 @@ const Interview = () => {
       return;
     }
 
-    // Initialize speech recognition
-    if (window.webkitSpeechRecognition) {
-      recognition.current = new window.webkitSpeechRecognition();
-      recognition.current.continuous = true;
-      recognition.current.interimResults = true;
-
-      recognition.current.onresult = (event) => {
-        const transcript = Array.from(event.results)
-          .map((result) => result[0].transcript)
-          .join("");
-        setResponses((prev) => {
-          const newResponses = [...prev];
-          newResponses[questionIndex] = transcript;
-          return newResponses;
-        });
-      };
-
-      recognition.current.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        setError("Failed to access microphone. Please check your permissions.");
-      };
-    } else {
-      setError("Speech recognition is not supported in your browser.");
-    }
+    initializeSpeechRecognition();
 
     return () => {
       if (recognition.current) {
@@ -61,12 +91,12 @@ const Interview = () => {
         clearInterval(videoInterval.current);
       }
     };
-  }, [user, navigate, questionIndex]);
+  }, [user, navigate]);
 
   const captureVideoFrame = () => {
     if (webcamRef.current) {
       const frame = webcamRef.current.getScreenshot();
-      setVideoFrames((prev) => [...prev, { frame, timestamp: Date.now() }]);
+      // setVideoFrames(prev => [...prev, { frame, timestamp: Date.now() }]);
     }
   };
 
@@ -78,6 +108,14 @@ const Interview = () => {
   const startInterview = async () => {
     if (!topic.trim()) {
       setError("Please enter an interview topic");
+      return;
+    }
+
+    if (!microphoneAccess) {
+      setError(
+        "Microphone access is required to start the interview. Please grant permission and try again."
+      );
+      await initializeSpeechRecognition();
       return;
     }
 
@@ -95,7 +133,6 @@ const Interview = () => {
         recognition.current.start();
       }
 
-      // Start capturing video frames every 5 seconds
       videoInterval.current = setInterval(captureVideoFrame, 5000);
     } catch (err) {
       setError(err.message);
@@ -107,29 +144,30 @@ const Interview = () => {
   const nextQuestion = async () => {
     if (questionIndex < questions.length - 1) {
       try {
-        // Submit the current question's response
-        await interviewApi.submitResponse(interviewData.id, {
-          questionIndex,
-          question: currentQuestion,
-          response: responses[questionIndex],
-          videoFrames: videoFrames,
-        });
+        await submitResponse();
 
-        // Clear video frames for next question
-        setVideoFrames([]);
-
-        // Move to next question
         setQuestionIndex((prev) => prev + 1);
         setCurrentQuestion(questions[questionIndex + 1]);
-
-        // Restart speech recognition for new question
-        if (recognition.current) {
-          recognition.current.stop();
-          recognition.current.start();
-        }
       } catch (err) {
         setError(err.message);
       }
+    }
+  };
+
+  const submitResponse = async () => {
+    try {
+      const responseData = {
+        response: {
+          questionIndex,
+          question: currentQuestion,
+          response: responses[questionIndex] || "",
+          videoFrames,
+        },
+      };
+
+      await interviewApi.submitResponse(interviewData.id, responseData);
+    } catch (err) {
+      throw new Error(`Failed to submit response: ${err.message}`);
     }
   };
 
@@ -143,13 +181,7 @@ const Interview = () => {
         clearInterval(videoInterval.current);
       }
 
-      // Submit the final question's response
-      await interviewApi.submitResponse(interviewData.id, {
-        questionIndex,
-        question: currentQuestion,
-        response: responses[questionIndex],
-        videoFrames: videoFrames,
-      });
+      await submitResponse();
 
       setIsRecording(false);
       navigate("/dashboard");
@@ -212,6 +244,17 @@ const Interview = () => {
                 {error}
               </div>
             )}
+            {!microphoneAccess && !isRecording && (
+              <div className="bg-yellow-50 text-yellow-700 p-4 rounded-md mb-4">
+                <p>Microphone access is required for the interview.</p>
+                <button
+                  onClick={initializeSpeechRecognition}
+                  className="mt-2 text-sm font-medium underline"
+                >
+                  Grant Microphone Access
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="card">
@@ -235,7 +278,7 @@ const Interview = () => {
               {!isRecording ? (
                 <button
                   onClick={startInterview}
-                  disabled={loading}
+                  disabled={loading || !microphoneAccess}
                   className="btn-primary w-full"
                 >
                   {loading ? "Starting..." : "Start Interview"}
