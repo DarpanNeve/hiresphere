@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     DID_API_KEY: str
     MONGODB_URL: str
     DATABASE_NAME: str
-
+    DEEPSEEK_API_BASE_URL:str
+    DEEPSEEK_API_KEY:str
+    DEEPSEEK_MODEL_NAME:str
+    DEEPSEEK_ANALYSIS_MODEL:str
 # PROJECT_NAME=AI Interviewer
 # API_V1_STR=/api
 # SECRET_KEY=your-secret-key
