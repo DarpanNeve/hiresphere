@@ -1,7 +1,0 @@
-2025-02-22 12:50:44,467 - __main__ - INFO - Audio output initialized successfully
-2025-02-22 12:50:44,650 - __main__ - INFO - Calibrating microphone...
-2025-02-22 12:50:46,643 - __main__ - INFO - Microphone initialized successfully
-2025-02-22 12:50:56,389 - __main__ - INFO - Selected topic: react
-2025-02-22 12:50:57,387 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-2025-02-22 12:50:57,394 - __main__ - INFO - Loaded 5 questions
-2025-02-22 12:51:12,437 - __main__ - INFO - Recorded response: the concept of Virtual Drum is quite interesting t...
