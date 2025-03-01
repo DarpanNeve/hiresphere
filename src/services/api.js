@@ -77,16 +77,52 @@ export const interviewApi = {
 
   submitResponse: async (interviewId, response) => {
     try {
-      console.log(response);
-      const result = await api.post(`/feedback/${interviewId}/submit`, {
-        response,
-      });
+      const result = await api.post(
+        `/feedback/${interviewId}/submit`,
+        response
+      );
       return result.data;
     } catch (error) {
       if (error instanceof APIError) {
         throw error;
       }
       throw new APIError("Failed to submit response", 500);
+    }
+  },
+
+  completeInterview: async (interviewId) => {
+    try {
+      const result = await api.post(`/interviews/${interviewId}/complete`);
+      return result.data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      throw new APIError("Failed to complete interview", 500);
+    }
+  },
+
+  analyzeInterview: async (interviewId) => {
+    try {
+      const result = await api.post(`/feedback/${interviewId}/analyze`);
+      return result.data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      throw new APIError("Failed to analyze interview", 500);
+    }
+  },
+
+  getAnalysisStatus: async (interviewId) => {
+    try {
+      const response = await api.get(`/feedback/status/${interviewId}`);
+      return response.data;
+    } catch (error) {
+      if (error instanceof APIError) {
+        throw error;
+      }
+      throw new APIError("Failed to get analysis status", 500);
     }
   },
 
@@ -110,7 +146,7 @@ export const interviewApi = {
       if (error instanceof APIError) {
         throw error;
       }
-      throw new APIError("Failed to submit response", 500);
+      throw new APIError("Failed to fetch analysis", 500);
     }
   },
 

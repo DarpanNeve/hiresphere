@@ -18,7 +18,11 @@ async def create_interview(interview_in: InterviewCreate, user_id: str):
         }
 
         result = await db.database.interviews.insert_one(interview_data)
+        # Convert ObjectId to string before returning
         interview_data["id"] = str(result.inserted_id)
+        # Remove the _id field if it exists to avoid serialization issues
+        if "_id" in interview_data:
+            del interview_data["_id"]
         return interview_data
     except Exception as e:
         raise Exception(f"Failed to create interview: {str(e)}")
@@ -42,7 +46,7 @@ async def get_interview(interview_id: str):
         interview = await db.database.interviews.find_one({"_id": ObjectId(interview_id)})
         if interview:
             interview["id"] = str(interview["_id"])
-            del interview["_id"]
+            interview["_id"] = str(interview["_id"])  # Convert ObjectId to string
         return interview
     except Exception as e:
         raise Exception(f"Failed to fetch interview: {str(e)}")

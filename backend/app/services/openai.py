@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 # Initialize DeepSeek client
 client = OpenAI(
-    base_url=settings.DEEPSEEK_API_BASE_URL,
-    api_key=settings.DEEPSEEK_API_KEY
+    base_url=settings.OPENAI_API_BASE_URL,
+    api_key=settings.OPENAI_API_KEY
 )
 
 
@@ -19,7 +19,7 @@ async def generate_questions(topic: str) -> list:
     try:
         logger.info("Making API call to DeepSeek for question generation")
         response = client.chat.completions.create(
-            model=settings.DEEPSEEK_MODEL_NAME,  # Use model name from config
+            model=settings.OPENAI_MODEL_NAME,  # Use model name from config
             messages=[
                 {
                     "role": "system",
@@ -39,6 +39,7 @@ async def generate_questions(topic: str) -> list:
         questions = [q.strip() for q in raw_questions if q.strip()]
         cleaned_questions = [q for q in questions if any(q.startswith(f"{i}.") for i in range(1, 6))]
         final_questions = cleaned_questions[:5] if len(cleaned_questions) >= 5 else questions[:5]
+        print("final_questions", final_questions)
 
         return final_questions
 
@@ -73,7 +74,7 @@ async def analyze_response(response_data: dict) -> dict:
     try:
         logger.info("Making API call to DeepSeek for response analysis")
         response = client.chat.completions.create(
-            model=settings.DEEPSEEK_ANALYSIS_MODEL,  # Could be different model for analysis
+            model=settings.OPENAI_MODEL_NAME,  # Could be different model for analysis
             messages=[
                 {
                     "role": "system",
