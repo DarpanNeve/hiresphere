@@ -1,33 +1,34 @@
-import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
-/**
-* ProtectedRoute component that handles authentication state including loading state
-* @param {Object} props - Component props
-* @param {React.ReactNode} props.children - Child components to render when authenticated
-* @returns {React.ReactNode} The protected content or a redirect
-*/
-const ProtectedRoute = ({ children }) => {
-const { user, loading } = useAuth();
+const ProtectedRoute = ({ requiredRole }) => {
+  const { user, loading, isHR, isAdmin } = useAuth();
+  const location = useLocation();
 
-// Show loading state while authentication is being determined
-if (loading) {
+  if (loading) {
     return (
-    <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-    </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
     );
-}
+  }
 
-// Redirect to login if not authenticated
-if (!user) {
-    return <Navigate to="/login" replace />;
-}
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
 
-// If there are children, render them, otherwise render the Outlet
-return children ? children : <Outlet />;
+  // Check for role-specific access
+  if (requiredRole) {
+    if (requiredRole === "hr" && !isHR() && !isAdmin()) {
+      return <Navigate to="/dashboard" replace />;
+    }
+
+    if (requiredRole === "admin" && !isAdmin()) {
+      return <Navigate to="/dashboard" replace />;
+    }
+  }
+
+  return <Outlet />;
 };
 
 export default ProtectedRoute;
-

@@ -1,34 +1,26 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { authApi } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { authApi } from "../services/api";
 
 const Register = () => {
   const [formData, setFormData] = useState({
-    full_name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
+    full_name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    role: "user", // Default role
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { user } = useAuth();
-
-  // Redirect if user is already logged in
-  useEffect(() => {
-    if (user) {
-      navigate('/dashboard');
-    }
-  }, [user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       setLoading(false);
       return;
     }
@@ -37,9 +29,10 @@ const Register = () => {
       await authApi.register({
         email: formData.email,
         password: formData.password,
-        full_name: formData.full_name
+        full_name: formData.full_name,
+        role: formData.role, // Include role in registration data
       });
-      navigate('/login');
+      navigate("/login");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -47,16 +40,15 @@ const Register = () => {
     }
   };
 
-  // If user is already logged in, don't render the register form
-  if (user) return null;
-
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h1 className="text-3xl font-bold text-center text-gray-900">Register</h1>
+          <h1 className="text-3xl font-bold text-center text-gray-900">
+            Register
+          </h1>
           <p className="mt-2 text-center text-gray-600">
-            Already have an account?{' '}
+            Already have an account?{" "}
             <Link to="/login" className="text-primary hover:text-secondary">
               Login here
             </Link>
@@ -77,7 +69,9 @@ const Register = () => {
                 type="text"
                 required
                 value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, full_name: e.target.value })
+                }
                 className="input-field"
                 placeholder="Enter your full name"
               />
@@ -90,10 +84,27 @@ const Register = () => {
                 type="email"
                 required
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
                 className="input-field"
                 placeholder="Enter your email"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Account Type
+              </label>
+              <select
+                value={formData.role}
+                onChange={(e) =>
+                  setFormData({ ...formData, role: e.target.value })
+                }
+                className="input-field"
+              >
+                <option value="user">Candidate</option>
+                <option value="hr">HR Professional</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">
@@ -103,7 +114,9 @@ const Register = () => {
                 type="password"
                 required
                 value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, password: e.target.value })
+                }
                 className="input-field"
                 placeholder="Enter your password"
               />
@@ -116,7 +129,9 @@ const Register = () => {
                 type="password"
                 required
                 value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, confirmPassword: e.target.value })
+                }
                 className="input-field"
                 placeholder="Confirm your password"
               />
@@ -127,7 +142,7 @@ const Register = () => {
             disabled={loading}
             className="btn-primary w-full flex justify-center"
           >
-            {loading ? 'Registering...' : 'Register'}
+            {loading ? "Registering..." : "Register"}
           </button>
         </form>
       </div>

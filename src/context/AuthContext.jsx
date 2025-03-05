@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { authApi } from '../services/api';
+import { createContext, useContext, useState, useEffect } from "react";
+import { authApi } from "../services/api";
 
 const AuthContext = createContext(null);
 
@@ -8,7 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem("token");
     if (token) {
       checkAuth();
     } else {
@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
       const userData = await authApi.getProfile();
       setUser(userData);
     } catch (error) {
-      localStorage.removeItem('token');
+      localStorage.removeItem("token");
     } finally {
       setLoading(false);
     }
@@ -30,7 +30,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       const { access_token } = await authApi.login(email, password);
-      localStorage.setItem('token', access_token);
+      localStorage.setItem("token", access_token);
       await checkAuth();
       return true;
     } catch (error) {
@@ -48,12 +48,30 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem("token");
     setUser(null);
   };
 
+  const isHR = () => {
+    return user?.role === "hr";
+  };
+
+  const isAdmin = () => {
+    return user?.role === "admin";
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        logout,
+        isHR,
+        isAdmin,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -62,7 +80,7 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

@@ -17,6 +17,8 @@ const Interview = () => {
   const [topic, setTopic] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [isListening, setIsListening] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
   const recognition = useRef(null);
@@ -35,30 +37,31 @@ const Interview = () => {
       recognition.current.interimResults = true;
 
       recognition.current.onresult = (event) => {
-        const transcript = Array.from(event.results)
+        const currentTranscript = Array.from(event.results)
           .map((result) => result[0].transcript)
           .join("");
-        setResponses((prev) => {
-          const newResponses = [...prev];
-          newResponses[questionIndex] = transcript;
-          return newResponses;
-        });
+        setTranscript(currentTranscript);
       };
 
       recognition.current.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
         setError("Failed to access microphone. Please check your permissions.");
+        setIsListening(false);
+      };
+
+      recognition.current.onend = () => {
+        setIsListening(false);
       };
     } else {
       setError("Speech recognition is not supported in your browser.");
     }
 
     return () => {
-      if (recognition.current) {
+      if (recognition.current && isListening) {
         recognition.current.stop();
       }
     };
-  }, [user, navigate, questionIndex]);
+  }, [user, navigate]);
 
   const handleWebcamError = (err) => {
     console.error("Webcam error:", err);
@@ -81,9 +84,8 @@ const Interview = () => {
       setResponses(new Array(result.questions.length).fill(""));
       setIsRecording(true);
 
-      if (recognition.current) {
-        recognition.current.start();
-      }
+      // Start listening for the first question
+      startListening();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -91,57 +93,78 @@ const Interview = () => {
     }
   };
 
-  const submitResponse = async () => {
-    if (!responses[questionIndex] || responses[questionIndex].trim() === "") {
-      setError("Please provide a response before continuing");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setError("");
-
-      // Submit the current question's response
-      await interviewApi.submitResponse(interviewData.id, {
-        questionIndex,
-        response: {
-          question: currentQuestion,
-          response: responses[questionIndex],
-        },
-      });
-
-      setIsSubmitting(false);
-
-      // Move to next question or complete interview
-      if (questionIndex < questions.length - 1) {
-        // Move to next question
-        setQuestionIndex((prev) => prev + 1);
-        setCurrentQuestion(questions[questionIndex + 1]);
-
-        // Restart speech recognition for new question
-        if (recognition.current) {
-          recognition.current.stop();
-          recognition.current.start();
-        }
-      } else {
-        // This was the last question
-        completeInterview();
+  const startListening = () => {
+    if (recognition.current && !isListening) {
+      try {
+        recognition.current.start();
+        setIsListening(true);
+        setTranscript("");
+      } catch (error) {
+        console.error("Failed to start recognition:", error);
       }
-    } catch (err) {
-      setError(err.message);
-      setIsSubmitting(false);
+    }
+  };
+
+  const stopListening = () => {
+    if (recognition.current && isListening) {
+      recognition.current.stop();
+      setIsListening(false);
+    }
+  };
+
+  const saveCurrentResponse = () => {
+    if (transcript.trim()) {
+      setResponses((prev) => {
+        const newResponses = [...prev];
+        newResponses[questionIndex] = transcript;
+        return newResponses;
+      });
+    }
+  };
+
+  const moveToNextQuestion = () => {
+    // Save current response
+    saveCurrentResponse();
+
+    // Stop current recognition
+    stopListening();
+
+    // Move to next question
+    if (questionIndex < questions.length - 1) {
+      setQuestionIndex((prev) => prev + 1);
+      setCurrentQuestion(questions[questionIndex + 1]);
+      setTranscript("");
+
+      // Start listening for the next question
+      setTimeout(() => {
+        startListening();
+      }, 500);
+    } else {
+      // This was the last question
+      completeInterview();
     }
   };
 
   const completeInterview = async () => {
     try {
       setLoading(true);
-      if (recognition.current) {
-        recognition.current.stop();
-      }
+      stopListening();
 
       // Mark interview as completed
       await interviewApi.completeInterview(interviewData.id);
+
+      // Submit all responses at once
+      for (let i = 0; i < responses.length; i++) {
+        if (responses[i].trim()) {
+          await interviewApi.submitResponse(interviewData.id, {
+            questionIndex: i,
+            response: {
+              question: questions[i],
+              response: responses[i],
+            },
+          });
+        }
+      }
 
       // Start analysis in background
       await interviewApi.analyzeInterview(interviewData.id);
@@ -195,9 +218,17 @@ const Interview = () => {
             </div>
             <div className="card">
               <h2 className="text-2xl font-bold mb-4">Your Response</h2>
-              <p className="text-gray-600 min-h-[100px]">
-                {responses[questionIndex] || ""}
-              </p>
+              <div className="flex items-center mb-2">
+                <div
+                  className={`w-3 h-3 rounded-full mr-2 ${
+                    isListening ? "bg-red-500 animate-pulse" : "bg-gray-300"
+                  }`}
+                ></div>
+                <span className="text-sm text-gray-500">
+                  {isListening ? "Listening..." : "Microphone off"}
+                </span>
+              </div>
+              <p className="text-gray-600 min-h-[100px]">{transcript || ""}</p>
             </div>
           </div>
           <div className="space-y-4">
@@ -252,13 +283,28 @@ const Interview = () => {
                   </button>
                 ) : (
                   <div className="space-y-2">
+                    {isListening ? (
+                      <button
+                        onClick={stopListening}
+                        className="btn-outline w-full"
+                      >
+                        Pause Microphone
+                      </button>
+                    ) : (
+                      <button
+                        onClick={startListening}
+                        className="btn-outline w-full"
+                      >
+                        Resume Microphone
+                      </button>
+                    )}
                     <button
-                      onClick={submitResponse}
-                      disabled={isSubmitting}
+                      onClick={moveToNextQuestion}
+                      disabled={loading}
                       className="btn-primary w-full"
                     >
-                      {isSubmitting
-                        ? "Submitting..."
+                      {loading
+                        ? "Processing..."
                         : questionIndex < questions.length - 1
                         ? "Next Question"
                         : "Complete Interview"}
@@ -275,3 +321,4 @@ const Interview = () => {
 };
 
 export default Interview;
+  
