@@ -33,14 +33,14 @@ class InterviewLinkUpdate(BaseModel):
     expires_at: Optional[datetime] = None
 
 class InterviewLink(InterviewLinkBase):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    id: str = Field(alias="_id")  # Changed from PyObjectId to str
     token: str
     expires_at: datetime
     completed: bool = False
     sent_count: int = 0
     created_at: datetime
     updated_at: datetime
-    hr_id: PyObjectId
+    hr_id: str  # Changed from PyObjectId to str
     url: str = ""
     is_expired: bool = False
 

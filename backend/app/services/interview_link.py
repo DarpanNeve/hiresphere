@@ -3,7 +3,11 @@ from bson import ObjectId
 from app.db.mongodb import db
 from app.schemas.interview_link import InterviewLinkCreate, InterviewLinkUpdate, PublicInterviewStart, \
     PublicInterviewComplete
+from app.services.email import send_interview_email
 import secrets
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
@@ -30,19 +34,26 @@ async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
 
         result = await db.database.interview_links.insert_one(link_data)
 
-        # Add the _id to the response data
-        link_data["_id"] = result.inserted_id
-        link_data["id"] = str(result.inserted_id)  # Add string ID for API response
-        link_data["hr_id"] = str(link_data["hr_id"])  # Convert ObjectId to string
+        # Prepare response data
+        response_data = {
+            "_id": str(result.inserted_id),
+            "hr_id": str(link_data["hr_id"]),
+            **{k: v for k, v in link_data.items() if k not in ["_id", "hr_id"]},
+            "url": f"https://ai-interviewer.com/i/{token}",
+            "is_expired": False
+        }
 
-        # Add URL to response
-        link_data["url"] = f"https://ai-interviewer.com/i/{token}"
-        link_data["is_expired"] = False
+        # Send email to candidate
+        await send_interview_email(
+            candidate_email=link_in.candidate_email,
+            candidate_name=link_in.candidate_name,
+            interview_link=response_data["url"],
+            position=link_in.position
+        )
 
-        # TODO: Send email to candidate (would be implemented in a real system)
-
-        return link_data
+        return response_data
     except Exception as e:
+        logger.error(f"Failed to create interview link: {str(e)}")
         raise Exception(f"Failed to create interview link: {str(e)}")
 
 

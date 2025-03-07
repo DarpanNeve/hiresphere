@@ -31,10 +31,8 @@ const PublicInterview = () => {
   const webcamRef = useRef(null);
 
   useEffect(() => {
-    // Validate the interview link
     validateInterviewLink();
 
-    // Initialize speech recognition
     if (window.webkitSpeechRecognition) {
       recognition.current = new window.webkitSpeechRecognition();
       recognition.current.continuous = true;
@@ -70,17 +68,7 @@ const PublicInterview = () => {
   const validateInterviewLink = async () => {
     try {
       setLoading(true);
-      // In a real implementation, this would be an actual API call
-      // const linkData = await interviewApi.validateInterviewLink(linkId);
-
-      // Simulated data for now
-      const linkData = {
-        valid: true,
-        expired: false,
-        position: "Frontend Developer",
-        company: "TechCorp",
-        topic: "React, JavaScript, CSS",
-      };
+      const linkData = await interviewApi.validateInterviewLink(linkId);
 
       if (!linkData.valid) {
         setError("This interview link is invalid.");
@@ -106,7 +94,6 @@ const PublicInterview = () => {
   };
 
   const startInterview = async () => {
-    // Validate form
     if (!candidateInfo.name.trim() || !candidateInfo.email.trim()) {
       setError("Please enter your name and email to continue.");
       return;
@@ -116,19 +103,10 @@ const PublicInterview = () => {
       setLoading(true);
       setError("");
 
-      // In a real implementation, this would be an actual API call
-      // const result = await interviewApi.startPublicInterview(linkId, candidateInfo);
-
-      // Simulated data for now
-      const result = {
-        questions: [
-          "What is your experience with React hooks?",
-          "Explain the difference between state and props in React.",
-          "How do you handle responsive design in your projects?",
-          "Describe your approach to debugging a complex JavaScript issue.",
-          "What are your thoughts on CSS-in-JS solutions?",
-        ],
-      };
+      const result = await interviewApi.startPublicInterview(
+        linkId,
+        candidateInfo
+      );
 
       setQuestions(result.questions);
       setCurrentQuestion(result.questions[0]);
@@ -136,7 +114,6 @@ const PublicInterview = () => {
       setShowForm(false);
       setIsRecording(true);
 
-      // Start listening for the first question
       startListening();
     } catch (err) {
       setError(err.message || "Failed to start interview");
@@ -168,31 +145,28 @@ const PublicInterview = () => {
     if (transcript.trim()) {
       setResponses((prev) => {
         const newResponses = [...prev];
-        newResponses[questionIndex] = transcript;
+        newResponses[questionIndex] = {
+          question: currentQuestion,
+          response: transcript.trim(),
+        };
         return newResponses;
       });
     }
   };
 
   const moveToNextQuestion = () => {
-    // Save current response
     saveCurrentResponse();
-
-    // Stop current recognition
     stopListening();
 
-    // Move to next question
     if (questionIndex < questions.length - 1) {
       setQuestionIndex((prev) => prev + 1);
       setCurrentQuestion(questions[questionIndex + 1]);
       setTranscript("");
 
-      // Start listening for the next question
       setTimeout(() => {
         startListening();
       }, 500);
     } else {
-      // This was the last question
       completeInterview();
     }
   };
@@ -202,14 +176,18 @@ const PublicInterview = () => {
       setLoading(true);
       stopListening();
 
-      // In a real implementation, this would be an actual API call
-      // await interviewApi.completePublicInterview(linkId, {
-      //   candidateInfo,
-      //   responses: responses.map((response, index) => ({
-      //     question: questions[index],
-      //     response
-      //   }))
-      // });
+      // Save final response
+      saveCurrentResponse();
+
+      // Filter out any empty responses
+      const validResponses = responses.filter(
+        (r) => r && r.response && r.response.trim()
+      );
+
+      await interviewApi.completePublicInterview(linkId, {
+        candidateInfo,
+        responses: validResponses,
+      });
 
       setIsRecording(false);
       setIsCompleted(true);
@@ -251,7 +229,6 @@ const PublicInterview = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-md py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center">

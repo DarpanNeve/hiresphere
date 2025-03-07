@@ -60,11 +60,11 @@ const InterviewLinks = () => {
       }
 
       const result = await hrApi.createInterviewLink({
-        candidate_name: newLink.candidateName,
-        candidate_email: newLink.candidateEmail,
+        candidateName: newLink.candidateName,
+        candidateEmail: newLink.candidateEmail,
         position: newLink.position,
         topic: newLink.topic,
-        expires_in: parseInt(newLink.expiresIn),
+        expiresIn: parseInt(newLink.expiresIn),
       });
 
       // Add the new link to the list
@@ -79,18 +79,25 @@ const InterviewLinks = () => {
         expiresIn: "7",
       });
       setShowCreateModal(false);
+      setError("");
     } catch (err) {
       setError(err.message);
     }
   };
 
   const handleDeleteLink = async (id) => {
+    if (!id) {
+      setError("Invalid link ID");
+      return;
+    }
+
     if (confirm("Are you sure you want to delete this interview link?")) {
       try {
         await hrApi.deleteInterviewLink(id);
 
         // Update the list
-        setLinks(links.filter((link) => link.id !== id));
+        setLinks(links.filter((link) => link._id !== id));
+        setError("");
       } catch (err) {
         setError("Failed to delete interview link: " + err.message);
       }
@@ -98,17 +105,23 @@ const InterviewLinks = () => {
   };
 
   const handleResendEmail = async (id) => {
+    if (!id) {
+      setError("Invalid link ID");
+      return;
+    }
+
     try {
       const result = await hrApi.resendInterviewEmail(id);
 
       // Update the sent count
       setLinks(
         links.map((link) =>
-          link.id === id ? { ...link, sentCount: result.sent_count } : link
+          link._id === id ? { ...link, sent_count: result.sent_count } : link
         )
       );
 
       alert("Email sent successfully!");
+      setError("");
     } catch (err) {
       setError("Failed to resend email: " + err.message);
     }
@@ -123,8 +136,8 @@ const InterviewLinks = () => {
     if (!link) return false;
     const searchTermLower = searchTerm.toLowerCase();
     return (
-      (link.candidateName || "").toLowerCase().includes(searchTermLower) ||
-      (link.candidateEmail || "").toLowerCase().includes(searchTermLower) ||
+      (link.candidate_name || "").toLowerCase().includes(searchTermLower) ||
+      (link.candidate_email || "").toLowerCase().includes(searchTermLower) ||
       (link.position || "").toLowerCase().includes(searchTermLower)
     );
   });
@@ -140,10 +153,6 @@ const InterviewLinks = () => {
       default:
         return "bg-gray-100 text-gray-800";
     }
-  };
-
-  const isExpired = (expiryDate) => {
-    return new Date(expiryDate) < new Date();
   };
 
   if (loading) {
@@ -216,13 +225,13 @@ const InterviewLinks = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredLinks.map((link) => (
-                <tr key={link.id}>
+                <tr key={link._id}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="font-medium text-gray-900">
-                      {link.candidateName}
+                      {link.candidate_name}
                     </div>
                     <div className="text-sm text-gray-500">
-                      {link.candidateEmail}
+                      {link.candidate_email}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-500">
@@ -264,7 +273,7 @@ const InterviewLinks = () => {
                         <FiCopy />
                       </button>
                       <button
-                        onClick={() => handleResendEmail(link.id)}
+                        onClick={() => handleResendEmail(link._id)}
                         className="text-indigo-600 hover:text-indigo-900"
                         title="Resend Email"
                       >
@@ -280,7 +289,7 @@ const InterviewLinks = () => {
                         <FiExternalLink />
                       </a>
                       <button
-                        onClick={() => handleDeleteLink(link.id)}
+                        onClick={() => handleDeleteLink(link._id)}
                         className="text-red-600 hover:text-red-900"
                         title="Delete Link"
                       >
@@ -369,7 +378,7 @@ const InterviewLinks = () => {
                     setNewLink({ ...newLink, topic: e.target.value })
                   }
                   className="input-field"
-                  placeholder="e.g., React, JavaScript, CSS"
+                  placeholder="e.g., React Development, System Design"
                 />
               </div>
 
@@ -394,7 +403,10 @@ const InterviewLinks = () => {
 
             <div className="flex justify-end space-x-4 mt-8">
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setError("");
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
               >
                 Cancel

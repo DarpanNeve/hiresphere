@@ -35,11 +35,11 @@ async def create_link(
             )
 
         link = await create_interview_link(link_in, str(current_user.id))
-        logger.info(f"Created interview link with ID: {link['id']}")
+        logger.info(f"Created interview link with ID: {link['_id']}")
 
         return link
     except Exception as e:
-        logger.error(f"Failed to create interview link: {str(e)}", exc_info=True)
+        logger.error(f"Failed to create interview link: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create interview link: {str(e)}"

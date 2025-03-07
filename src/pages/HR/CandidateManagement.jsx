@@ -15,6 +15,8 @@ const CandidateManagement = () => {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [newCandidate, setNewCandidate] = useState({
     name: "",
     email: "",
@@ -46,6 +48,13 @@ const CandidateManagement = () => {
         return;
       }
 
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newCandidate.email)) {
+        setError("Please enter a valid email address");
+        return;
+      }
+
       const result = await hrApi.addCandidate(newCandidate);
 
       // Add the new candidate to the list
@@ -59,8 +68,41 @@ const CandidateManagement = () => {
         status: "pending",
       });
       setShowAddModal(false);
+      setError("");
     } catch (err) {
       setError("Failed to add candidate: " + err.message);
+    }
+  };
+
+  const handleEditCandidate = async () => {
+    try {
+      if (!selectedCandidate) {
+        setError("No candidate selected for editing");
+        return;
+      }
+
+      // Validate email if it was changed
+      if (selectedCandidate.email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(selectedCandidate.email)) {
+          setError("Please enter a valid email address");
+          return;
+        }
+      }
+
+      const result = await hrApi.updateCandidate(
+        selectedCandidate._id,
+        selectedCandidate
+      );
+
+      // Update the candidate in the list
+      setCandidates(candidates.map((c) => (c._id === result._id ? result : c)));
+
+      setShowEditModal(false);
+      setSelectedCandidate(null);
+      setError("");
+    } catch (err) {
+      setError("Failed to update candidate: " + err.message);
     }
   };
 
@@ -70,7 +112,8 @@ const CandidateManagement = () => {
         await hrApi.deleteCandidate(id);
 
         // Update the list
-        setCandidates(candidates.filter((candidate) => candidate.id !== id));
+        setCandidates(candidates.filter((candidate) => candidate._id !== id));
+        setError("");
       } catch (err) {
         setError("Failed to delete candidate: " + err.message);
       }
@@ -90,6 +133,7 @@ const CandidateManagement = () => {
       const link = await hrApi.createInterviewLink(linkData);
 
       alert(`Interview link created for ${candidate.name}. Link: ${link.url}`);
+      setError("");
     } catch (err) {
       setError("Failed to create interview link: " + err.message);
     }
@@ -186,7 +230,7 @@ const CandidateManagement = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredCandidates.map((candidate) => (
-                <tr key={candidate.id}>
+                <tr key={candidate._id}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="font-medium text-gray-900">
                       {candidate.name}
@@ -232,13 +276,17 @@ const CandidateManagement = () => {
                         <FiMail />
                       </button>
                       <button
+                        onClick={() => {
+                          setSelectedCandidate(candidate);
+                          setShowEditModal(true);
+                        }}
                         className="text-gray-600 hover:text-gray-900"
                         title="Edit Candidate"
                       >
                         <FiEdit2 />
                       </button>
                       <button
-                        onClick={() => handleDeleteCandidate(candidate.id)}
+                        onClick={() => handleDeleteCandidate(candidate._id)}
                         className="text-red-600 hover:text-red-900"
                         title="Delete Candidate"
                       >
@@ -340,13 +388,118 @@ const CandidateManagement = () => {
 
             <div className="flex justify-end space-x-4 mt-8">
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={() => {
+                  setShowAddModal(false);
+                  setError("");
+                }}
                 className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button onClick={handleAddCandidate} className="btn-primary">
                 Add Candidate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Candidate Modal */}
+      {showEditModal && selectedCandidate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold mb-6">Edit Candidate</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  value={selectedCandidate.name}
+                  onChange={(e) =>
+                    setSelectedCandidate({
+                      ...selectedCandidate,
+                      name: e.target.value,
+                    })
+                  }
+                  className="input-field"
+                  placeholder="Enter candidate's full name"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  value={selectedCandidate.email}
+                  onChange={(e) =>
+                    setSelectedCandidate({
+                      ...selectedCandidate,
+                      email: e.target.value,
+                    })
+                  }
+                  className="input-field"
+                  placeholder="Enter candidate's email"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Position *
+                </label>
+                <input
+                  type="text"
+                  value={selectedCandidate.position}
+                  onChange={(e) =>
+                    setSelectedCandidate({
+                      ...selectedCandidate,
+                      position: e.target.value,
+                    })
+                  }
+                  className="input-field"
+                  placeholder="Enter position applied for"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  value={selectedCandidate.status}
+                  onChange={(e) =>
+                    setSelectedCandidate({
+                      ...selectedCandidate,
+                      status: e.target.value,
+                    })
+                  }
+                  className="input-field"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="interviewed">Interviewed</option>
+                  <option value="hired">Hired</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-4 mt-8">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setSelectedCandidate(null);
+                  setError("");
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button onClick={handleEditCandidate} className="btn-primary">
+                Save Changes
               </button>
             </div>
           </div>

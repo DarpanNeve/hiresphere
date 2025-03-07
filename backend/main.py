@@ -88,3 +88,6 @@ app.include_router(
 @app.get("/")
 async def root():
     return {"message": "Welcome to AI Interviewer API"}
+
+# run backend code
+# uvicorn main:app --reload

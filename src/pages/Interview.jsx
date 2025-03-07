@@ -150,21 +150,29 @@ const Interview = () => {
       setLoading(true);
       stopListening();
 
+      // Save the last response
+      saveCurrentResponse();
+
       // Mark interview as completed
       await interviewApi.completeInterview(interviewData.id);
 
-      // Submit all responses at once
-      for (let i = 0; i < responses.length; i++) {
-        if (responses[i].trim()) {
-          await interviewApi.submitResponse(interviewData.id, {
-            questionIndex: i,
-            response: {
-              question: questions[i],
-              response: responses[i],
-            },
-          });
-        }
-      }
+      // Submit all responses
+      const allResponses = responses
+        .map((response, index) => ({
+          questionIndex: index,
+          response: {
+            question: questions[index],
+            response: response || transcript, // Use transcript for current question if response not saved
+          },
+        }))
+        .filter((r) => r.response.response.trim()); // Filter out empty responses
+
+      // Submit responses in parallel
+      await Promise.all(
+        allResponses.map((response) =>
+          interviewApi.submitResponse(interviewData.id, response)
+        )
+      );
 
       // Start analysis in background
       await interviewApi.analyzeInterview(interviewData.id);
@@ -321,4 +329,3 @@ const Interview = () => {
 };
 
 export default Interview;
-  

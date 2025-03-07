@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "https://hiresphere-eita.onrender.com",
+        // target: "https://hiresphere-eita.onrender.com",
+        target: "http://localhost:8000",
         changeOrigin: true,
         secure: true,
         headers: {
