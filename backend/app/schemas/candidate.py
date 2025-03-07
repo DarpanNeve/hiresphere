@@ -41,9 +41,8 @@ class Candidate(CandidateBase):
     updated_at: datetime
     hr_id: PyObjectId
 
-    model_config = {
-        "json_encoders": {ObjectId: str},
-        "populate_by_name": True,
-        "arbitrary_types_allowed": True,
-        "from_attributes": True
-    }
+    class Config:
+        json_encoders = {ObjectId: str}
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        from_attributes = True

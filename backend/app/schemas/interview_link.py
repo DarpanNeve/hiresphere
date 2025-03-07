@@ -17,19 +17,19 @@ class PyObjectId(ObjectId):
         )
 
 class InterviewLinkBase(BaseModel):
-    candidate_name: str
+    candidate_name: str = Field(..., min_length=1)
     candidate_email: EmailStr
-    position: str
-    topic: str
+    position: str = Field(..., min_length=1)
+    topic: str = Field(..., min_length=1)
 
 class InterviewLinkCreate(InterviewLinkBase):
-    expires_in: int = 7  # Days
+    expires_in: int = Field(default=7, ge=1, le=30)  # Days, between 1 and 30
 
 class InterviewLinkUpdate(BaseModel):
-    candidate_name: Optional[str] = None
+    candidate_name: Optional[str] = Field(None, min_length=1)
     candidate_email: Optional[EmailStr] = None
-    position: Optional[str] = None
-    topic: Optional[str] = None
+    position: Optional[str] = Field(None, min_length=1)
+    topic: Optional[str] = Field(None, min_length=1)
     expires_at: Optional[datetime] = None
 
 class InterviewLink(InterviewLinkBase):
@@ -44,20 +44,19 @@ class InterviewLink(InterviewLinkBase):
     url: str = ""
     is_expired: bool = False
 
-    model_config = {
-        "json_encoders": {ObjectId: str},
-        "populate_by_name": True,
-        "arbitrary_types_allowed": True,
-        "from_attributes": True
-    }
+    class Config:
+        json_encoders = {ObjectId: str}
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        from_attributes = True
 
 class PublicInterviewStart(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1)
     email: EmailStr
 
 class PublicInterviewResponse(BaseModel):
-    question: str
-    response: str
+    question: str = Field(..., min_length=1)
+    response: str = Field(..., min_length=1)
 
 class PublicInterviewComplete(BaseModel):
     candidateInfo: dict

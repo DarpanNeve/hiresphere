@@ -19,8 +19,12 @@ async def create_candidate(candidate_in: CandidateCreate, hr_id: str):
         }
 
         result = await db.database.candidates.insert_one(candidate_data)
-        candidate_data["id"] = str(result.inserted_id)
         candidate_data["_id"] = result.inserted_id
+
+        # Convert ObjectId to string for response
+        candidate_data["_id"] = str(candidate_data["_id"])
+        candidate_data["hr_id"] = str(candidate_data["hr_id"])
+
         return candidate_data
     except Exception as e:
         raise Exception(f"Failed to create candidate: {str(e)}")
@@ -31,7 +35,9 @@ async def get_candidates(hr_id: str):
         cursor = db.database.candidates.find({"hr_id": ObjectId(hr_id)}).sort("created_at", -1)
         candidates = []
         async for doc in cursor:
-            doc["id"] = str(doc["_id"])
+            # Convert ObjectId to string
+            doc["_id"] = str(doc["_id"])
+            doc["hr_id"] = str(doc["hr_id"])
             candidates.append(doc)
         return candidates
     except Exception as e:
@@ -42,7 +48,9 @@ async def get_candidate(candidate_id: str):
     try:
         candidate = await db.database.candidates.find_one({"_id": ObjectId(candidate_id)})
         if candidate:
-            candidate["id"] = str(candidate["_id"])
+            # Convert ObjectId to string
+            candidate["_id"] = str(candidate["_id"])
+            candidate["hr_id"] = str(candidate["hr_id"])
         return candidate
     except Exception as e:
         raise Exception(f"Failed to fetch candidate: {str(e)}")

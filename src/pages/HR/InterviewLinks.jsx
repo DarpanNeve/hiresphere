@@ -43,8 +43,8 @@ const InterviewLinks = () => {
     try {
       // Validate form
       if (
-        !newLink.candidateEmail ||
         !newLink.candidateName ||
+        !newLink.candidateEmail ||
         !newLink.position ||
         !newLink.topic
       ) {
@@ -52,7 +52,20 @@ const InterviewLinks = () => {
         return;
       }
 
-      const result = await hrApi.createInterviewLink(newLink);
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newLink.candidateEmail)) {
+        setError("Please enter a valid email address");
+        return;
+      }
+
+      const result = await hrApi.createInterviewLink({
+        candidate_name: newLink.candidateName,
+        candidate_email: newLink.candidateEmail,
+        position: newLink.position,
+        topic: newLink.topic,
+        expires_in: parseInt(newLink.expiresIn),
+      });
 
       // Add the new link to the list
       setLinks([result, ...links]);
@@ -67,7 +80,7 @@ const InterviewLinks = () => {
       });
       setShowCreateModal(false);
     } catch (err) {
-      setError("Failed to create interview link: " + err.message);
+      setError(err.message);
     }
   };
 
@@ -106,12 +119,15 @@ const InterviewLinks = () => {
     alert("Link copied to clipboard!");
   };
 
-  const filteredLinks = links.filter(
-    (link) =>
-      link.candidateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      link.candidateEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      link.position.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLinks = links.filter((link) => {
+    if (!link) return false;
+    const searchTermLower = searchTerm.toLowerCase();
+    return (
+      (link.candidateName || "").toLowerCase().includes(searchTermLower) ||
+      (link.candidateEmail || "").toLowerCase().includes(searchTermLower) ||
+      (link.position || "").toLowerCase().includes(searchTermLower)
+    );
+  });
 
   const getStatusBadgeClass = (status) => {
     switch (status) {

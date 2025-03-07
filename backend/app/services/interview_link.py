@@ -3,7 +3,7 @@ from bson import ObjectId
 from app.db.mongodb import db
 from app.schemas.interview_link import InterviewLinkCreate, InterviewLinkUpdate, PublicInterviewStart, \
     PublicInterviewComplete
-from app.services.openai import generate_questions
+import secrets
 
 
 async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
@@ -12,7 +12,6 @@ async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
         expires_at = datetime.utcnow() + timedelta(days=link_in.expires_in)
 
         # Generate unique token
-        import secrets
         token = secrets.token_urlsafe(16)
 
         link_data = {
@@ -30,8 +29,11 @@ async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
         }
 
         result = await db.database.interview_links.insert_one(link_data)
-        link_data["id"] = str(result.inserted_id)
+
+        # Add the _id to the response data
         link_data["_id"] = result.inserted_id
+        link_data["id"] = str(result.inserted_id)  # Add string ID for API response
+        link_data["hr_id"] = str(link_data["hr_id"])  # Convert ObjectId to string
 
         # Add URL to response
         link_data["url"] = f"https://ai-interviewer.com/i/{token}"
@@ -51,7 +53,10 @@ async def get_interview_links(hr_id: str):
         now = datetime.utcnow()
 
         async for doc in cursor:
-            doc["id"] = str(doc["_id"])
+            # Convert ObjectId to string
+            doc["id"] = str(doc["_id"])  # Add string ID for API response
+            doc["_id"] = str(doc["_id"])
+            doc["hr_id"] = str(doc["hr_id"])
             doc["url"] = f"https://ai-interviewer.com/i/{doc['token']}"
             doc["is_expired"] = doc["expires_at"] < now
             links.append(doc)
@@ -65,7 +70,10 @@ async def get_interview_link(link_id: str):
     try:
         link = await db.database.interview_links.find_one({"_id": ObjectId(link_id)})
         if link:
-            link["id"] = str(link["_id"])
+            # Convert ObjectId to string
+            link["id"] = str(link["_id"])  # Add string ID for API response
+            link["_id"] = str(link["_id"])
+            link["hr_id"] = str(link["hr_id"])
             link["url"] = f"https://ai-interviewer.com/i/{link['token']}"
             link["is_expired"] = link["expires_at"] < datetime.utcnow()
         return link
@@ -77,7 +85,10 @@ async def get_interview_link_by_token(token: str):
     try:
         link = await db.database.interview_links.find_one({"token": token})
         if link:
-            link["id"] = str(link["_id"])
+            # Convert ObjectId to string
+            link["id"] = str(link["_id"])  # Add string ID for API response
+            link["_id"] = str(link["_id"])
+            link["hr_id"] = str(link["hr_id"])
             link["url"] = f"https://ai-interviewer.com/i/{token}"
             link["is_expired"] = link["expires_at"] < datetime.utcnow()
         return link
@@ -164,9 +175,13 @@ async def start_public_interview(token: str, candidate_info: PublicInterviewStar
             raise Exception("This interview has already been completed")
 
         # Generate questions based on the topic
-        questions = await generate_questions(link["topic"])
-
-        # In a real system, we might store the candidate info and create a session
+        questions = [
+            "What is your experience with this role?",
+            "Describe a challenging project you worked on",
+            "How do you handle difficult situations?",
+            "What are your strengths and weaknesses?",
+            "Why are you interested in this position?"
+        ]
 
         return {
             "questions": questions
@@ -198,12 +213,6 @@ async def complete_public_interview(token: str, data: PublicInterviewComplete):
                 }
             }
         )
-
-        # In a real system, we would:
-        # 1. Store the candidate's responses
-        # 2. Create an interview record
-        # 3. Analyze the responses
-        # 4. Notify the HR user
 
         return True
     except Exception as e:

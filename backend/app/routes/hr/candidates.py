@@ -29,7 +29,7 @@ async def add_candidate(
             )
 
         candidate = await create_candidate(candidate_in, str(current_user.id))
-        logger.info(f"Created candidate with ID: {candidate['id']}")
+        logger.info(f"Created candidate with ID: {candidate['_id']}")
 
         return candidate
     except Exception as e:

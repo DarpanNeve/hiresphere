@@ -11,8 +11,9 @@ class APIError extends Error {
 }
 
 const api = axios.create({
-  baseURL: "http://localhost:8000/api",
+  baseURL: "https://hiresphere-eita.onrender.com/api",
   timeout: 30000, // 30 second timeout for all requests
+  withCredentials: true,
 });
 
 // Request interceptor for adding auth token
@@ -30,10 +31,15 @@ api.interceptors.response.use(
   (error) => {
     if (error.response) {
       // Server responded with error
-      const message =
+      let message =
         error.response.data?.detail || "An unexpected error occurred";
       const code = error.response.status;
       const details = error.response.data;
+
+      // Handle validation errors
+      if (code === 422 && Array.isArray(error.response.data)) {
+        message = error.response.data.map((err) => err.msg).join(", ");
+      }
 
       // Handle specific error cases
       switch (code) {
@@ -308,7 +314,7 @@ export const hrApi = {
   // Interview links
   getInterviewLinks: async () => {
     try {
-      const response = await api.get("/hr/interview-links");
+      const response = await api.get("/hr/interview-links/");
       return response.data;
     } catch (error) {
       if (error instanceof APIError) {
@@ -320,7 +326,7 @@ export const hrApi = {
 
   createInterviewLink: async (linkData) => {
     try {
-      const response = await api.post("/hr/interview-links", linkData);
+      const response = await api.post("/hr/interview-links/", linkData); // Note the trailing slash
       return response.data;
     } catch (error) {
       if (error instanceof APIError) {
@@ -329,7 +335,6 @@ export const hrApi = {
       throw new APIError("Failed to create interview link", 500);
     }
   },
-
   deleteInterviewLink: async (linkId) => {
     try {
       const response = await api.delete(`/hr/interview-links/${linkId}`);
