@@ -39,7 +39,7 @@ async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
             "_id": str(result.inserted_id),
             "hr_id": str(link_data["hr_id"]),
             **{k: v for k, v in link_data.items() if k not in ["_id", "hr_id"]},
-            "url": f"https://ai-interviewer.com/i/{token}",
+            "url": f"https://hiresphere-eita.onrender.com/i/{token}",
             "is_expired": False
         }
 
