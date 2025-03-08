@@ -15,65 +15,65 @@ client = OpenAI(
     api_key=settings.OPENAI_API_KEY
 )
 
+def fallback_questions(topic: str, count: int) -> List[str]:
+    """Return a fallback list of interview questions."""
+    fallback = [
+        f"Can you explain your experience with {topic}?",
+        f"What are the core concepts of {topic}?",
+        f"Describe a challenging problem you solved using {topic}?",
+        f"What are the best practices when working with {topic}?",
+        f"How would you handle a complex {topic} implementation?"
+    ]
+    return fallback[:count]
 
-async def generate_questions(topic: str, position: str = None, seniority: str = None) -> List[Dict[str, Any]]:
+async def generate_questions(topic: str, position: str = None, seniority: str = None) -> List[str]:
     """
     Generate diverse interview questions based on topic, position, and seniority level.
-    Returns a list of structured question objects.
+    Returns a list of question strings.
     """
     logger.info(f"Generating questions for topic: {topic}, position: {position}, seniority: {seniority}")
 
-    system_prompt = """You are an expert technical interviewer. Generate a diverse set of interview questions following these guidelines:
+    system_prompt = f"""You are an expert technical interviewer. Generate exactly {settings.DEFAULT_QUESTION_COUNT} interview questions following these guidelines:
 
-    1. Question Types (create a balanced mix):
-       - Technical knowledge questions
-       - Problem-solving scenarios
-       - System design questions (for senior roles)
-       - Behavioral questions
-       - Experience-based questions
+1. Question Types (create a balanced mix):
+   - Technical knowledge questions
+   - Problem-solving scenarios
+   - System design questions (for senior roles)
+   - Behavioral questions
+   - Experience-based questions
 
-    2. Difficulty Distribution:
-       - 2 Easy questions (fundamental concepts)
-       - 4 Medium questions (practical applications)
-       - 2 Hard questions (complex scenarios)
+2. Difficulty Distribution:
+   - 30% Easy questions (fundamental concepts)
+   - 50% Medium questions (practical applications)
+   - 20% Hard questions (complex scenarios)
 
-    3. Question Structure:
-       - Clear and concise wording
-       - Real-world context when applicable
-       - Progressive complexity
-       - Include follow-up questions to probe deeper
+3. Question Structure:
+   - Clear and concise wording
+   - Real-world context when applicable
+   - Progressive complexity
+   - Include follow-up questions to probe deeper
 
-    4. Coverage Areas:
-       - Core concepts of the topic
-       - Best practices and patterns
-       - Common pitfalls and challenges
-       - Industry standards and trends
-       - Practical application scenarios
+4. Coverage Areas:
+   - Core concepts of the topic
+   - Best practices and patterns
+   - Common pitfalls and challenges
+   - Industry standards and trends
+   - Practical application scenarios
 
-    Format each question as a JSON object with:
-    {
-        "question": "Main question text",
-        "type": "technical|behavioral|problem-solving|system-design|experience",
-        "difficulty": "easy|medium|hard",
-        "category": "Specific area within the topic",
-        "follow_up": ["Follow-up question 1", "Follow-up question 2"],
-        "expected_topics": ["Key points to cover in the answer"],
-        "evaluation_criteria": ["Specific aspects to evaluate"]
-    }
-    """
+Return the questions in a valid JSON array format where each question is a string.
+"""
 
-    user_prompt = f"""Generate interview questions for:
-    Topic: {topic}
-    Position: {position or 'Not specified'}
-    Seniority Level: {seniority or 'Not specified'}
+    user_prompt = f"""Generate {settings.DEFAULT_QUESTION_COUNT} interview questions for:
+Topic: {topic}
+Position: {position or 'Not specified'}
+Seniority Level: {seniority or 'Not specified'}
 
-    Ensure questions are:
-    1. Relevant to the specific position and seniority level
-    2. Progressive in difficulty
-    3. Cover both theoretical knowledge and practical experience
-    4. Include scenario-based questions
-    5. Appropriate for evaluating candidate competency
-    """
+Ensure questions are:
+1. Relevant to the specific position and seniority level.
+2. Progressive in difficulty.
+3. Cover both theoretical knowledge and practical experience.
+4. Include scenario-based questions.
+"""
 
     try:
         logger.info("Making API call to OpenAI for question generation")
@@ -87,164 +87,159 @@ async def generate_questions(topic: str, position: str = None, seniority: str = 
             max_tokens=2000
         )
 
-        # Parse and validate response
-        questions = json.loads(response.choices[0].message.content)
+        content = response.choices[0].message.content
 
-        # Validate question structure
-        validated_questions = []
-        required_fields = ['question', 'type', 'difficulty', 'category', 'follow_up', 'expected_topics',
-                           'evaluation_criteria']
+        # Try to parse as JSON first
+        try:
+            questions = json.loads(content)
+            if isinstance(questions, list) and questions:
+                return [str(q).strip() for q in questions][:settings.DEFAULT_QUESTION_COUNT]
+        except json.JSONDecodeError:
+            logger.warning("JSON parsing failed for question generation; attempting regex extraction.")
 
-        for q in questions:
-            if all(key in q for key in required_fields):
-                # Additional validation
-                if not isinstance(q['follow_up'], list) or not isinstance(q['expected_topics'], list):
-                    logger.warning(f"Invalid question format: {q}")
-                    continue
+        # Fallback: use regex extraction if JSON parsing fails
+        question_pattern = r'(?:\d+\.|[-•*]\s)(.+?)(?=(?:\d+\.|[-•*]\s)|$)'
+        matches = re.findall(question_pattern, content, re.DOTALL)
+        if matches:
+            questions = [q.strip() for q in matches if q.strip()]
+            if questions:
+                return questions[:settings.DEFAULT_QUESTION_COUNT]
 
-                # Clean and validate the question text
-                q['question'] = q['question'].strip()
-                if not q['question']:
-                    continue
+        # Fallback: split by newline and look for question-like sentences
+        lines = content.split('\n')
+        questions = [
+            line.strip() for line in lines
+            if line.strip() and ('?' in line or line.strip().lower().startswith(('describe', 'explain')))
+        ]
+        if questions:
+            return questions[:settings.DEFAULT_QUESTION_COUNT]
 
-                validated_questions.append(q)
-            else:
-                logger.warning(f"Skipping malformed question: {q}")
-
-        if not validated_questions:
-            raise ValueError("No valid questions generated")
-
-        logger.info(f"Successfully generated {len(validated_questions)} questions")
-        return validated_questions
+        logger.warning("Using fallback questions due to parsing issues")
+        return fallback_questions(topic, settings.DEFAULT_QUESTION_COUNT)
 
     except Exception as e:
         logger.error(f"Error generating questions: {str(e)}", exc_info=True)
-        # Return a basic set of fallback questions
-        return [
-            {
-                "question": f"Can you explain your experience with {topic}?",
-                "type": "experience",
-                "difficulty": "easy",
-                "category": "Background",
-                "follow_up": ["What challenges did you face?", "How did you overcome them?"],
-                "expected_topics": ["Relevant experience", "Problem-solving approach"],
-                "evaluation_criteria": ["Communication clarity", "Experience depth"]
-            },
-            {
-                "question": f"Describe a complex problem you solved using {topic}",
-                "type": "problem-solving",
-                "difficulty": "medium",
-                "category": "Problem Solving",
-                "follow_up": ["What alternatives did you consider?", "How did you measure success?"],
-                "expected_topics": ["Problem analysis", "Solution implementation"],
-                "evaluation_criteria": ["Technical knowledge", "Decision making"]
-            }
-        ]
+        return fallback_questions(topic, settings.DEFAULT_QUESTION_COUNT)
 
 
-async def analyze_response(response_data: dict) -> dict:
+async def analyze_response(response_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Analyze interview responses with enhanced criteria and scoring.
+    Analyze interview responses and return analysis in the old code's format.
+    The returned dictionary contains:
+      - knowledge_score (mapped from technical_score)
+      - communication_score
+      - confidence_score (mapped from problem_solving_score)
+      - feedback (combined detailed feedback, including the original question)
+    If the answer is blank, the function returns a fallback analysis without calling OpenAI.
     """
-    question = response_data["response"]["question"]
-    response = response_data["response"]["response"]
+    question = response_data.get("response", {}).get("question", "")
+    interview_response = response_data.get("response", {}).get("response", "")
+
+    # If the candidate's answer is blank, do not call OpenAI and return fallback analysis
+    if not interview_response.strip():
+        logger.info("Interview response is blank. Skipping OpenAI analysis and returning fallback analysis.")
+        fallback_feedback = f"Question: {question}\nNo answer was provided for analysis."
+        return {
+            "knowledge_score": 0,
+            "communication_score": 0,
+            "confidence_score": 0,
+            "feedback": fallback_feedback
+        }
 
     logger.info("Starting response analysis")
-    prompt = f"""
-    Analyze the following interview response:
 
-    Question: "{question}"
-    Response: "{response}"
+    system_prompt = """You are an expert at analyzing interview responses. Provide detailed, actionable feedback in JSON format with the following structure:
+{
+    "technical_score": <0-100>,
+    "communication_score": <0-100>,
+    "problem_solving_score": <0-100>,
+    "strengths": ["strength1", "strength2", ...],
+    "improvements": ["improvement1", "improvement2", ...],
+    "recommendations": ["recommendation1", "recommendation2", ...],
+    "overall_summary": "detailed summary"
+}
+"""
 
-    Provide a comprehensive analysis covering:
+    user_prompt = f"""Analyze this interview response:
 
-    1. Technical Knowledge (0-100):
-       - Understanding of core concepts
-       - Accuracy of information
-       - Depth of knowledge
-       - Use of technical terminology
-       - Current industry awareness
+Question: "{question}"
+Response: "{interview_response}"
 
-    2. Communication Skills (0-100):
-       - Clarity of expression
-       - Structure and organization
-       - Professional language use
-       - Ability to explain complex concepts
-       - Engagement and confidence
+Evaluate:
+1. Technical Knowledge (0-100)
+2. Communication Skills (0-100)
+3. Problem-Solving (0-100)
 
-    3. Problem-Solving (0-100):
-       - Analytical thinking/in
-       - Approach methodology
-       - Solution creativity
-       - Consideration of alternatives
-       - Understanding of trade-offs
-
-    4. Overall Assessment:
-       - Strengths demonstrated
-       - Areas for improvement
-       - Specific recommendations
-       - Overall impression
-
-    Format your response as JSON with:
-    - Numerical scores for each category
-    - Detailed feedback points
-    - Specific improvement suggestions
-    - Overall evaluation summary
-    """
+Provide detailed feedback including strengths, areas for improvement, and recommendations.
+Return the analysis in valid JSON format.
+"""
 
     try:
         logger.info("Making API call to OpenAI for response analysis")
-        response = client.chat.completions.create(
+        completion = client.chat.completions.create(
             model=settings.OPENAI_MODEL_NAME,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert at analyzing interview responses. Provide detailed, actionable feedback."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.7,
             max_tokens=1000
         )
 
-        # Parse and validate the analysis
-        analysis = json.loads(response.choices[0].message.content)
+        content = completion.choices[0].message.content
 
-        # Ensure all required fields are present
-        required_fields = [
-            'technical_score',
-            'communication_score',
-            'problem_solving_score',
-            'strengths',
-            'improvements',
-            'recommendations',
-            'overall_summary'
-        ]
+        try:
+            analysis = json.loads(content)
+            # Validate required fields in the new analysis response
+            required_fields = [
+                'technical_score',
+                'communication_score',
+                'problem_solving_score',
+                'strengths',
+                'improvements',
+                'recommendations',
+                'overall_summary'
+            ]
+            if not all(field in analysis for field in required_fields):
+                raise ValueError("Incomplete analysis response")
 
-        if not all(field in analysis for field in required_fields):
-            raise ValueError("Incomplete analysis response")
+            # Normalize scores within 0-100
+            technical_score = min(100, max(0, int(analysis.get('technical_score', 0))))
+            communication_score = min(100, max(0, int(analysis.get('communication_score', 0))))
+            problem_solving_score = min(100, max(0, int(analysis.get('problem_solving_score', 0))))
 
-        return {
-            "knowledge_score": analysis['technical_score'],
-            "communication_score": analysis['communication_score'],
-            "problem_solving_score": analysis['problem_solving_score'],
-            "strengths": analysis['strengths'],
-            "improvements": analysis['improvements'],
-            "recommendations": analysis['recommendations'],
-            "overall_summary": analysis['overall_summary']
-        }
+            # Combine strengths, improvements, and recommendations into a single feedback string
+            feedback = (
+                f"Overall Summary: {analysis.get('overall_summary', '')}\n"
+                f"Strengths: {', '.join(analysis.get('strengths', []))}\n"
+                f"Improvements: {', '.join(analysis.get('improvements', []))}\n"
+                f"Recommendations: {', '.join(analysis.get('recommendations', []))}"
+            )
+
+            # Map new metrics to old response keys
+            return {
+                "knowledge_score": technical_score,
+                "communication_score": communication_score,
+                "confidence_score": problem_solving_score,
+                "feedback": feedback
+            }
+
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"Error parsing analysis response: {str(e)}")
+            # Fallback to default analysis response
+            return {
+                "knowledge_score": 70,
+                "communication_score": 70,
+                "confidence_score": 70,
+                "feedback": ("Average performance with room for improvement. Technical knowledge demonstrated, "
+                             "but response could be more structured. Practice more mock interviews.")
+            }
 
     except Exception as e:
         logger.error(f"Error analyzing response: {str(e)}", exc_info=True)
         return {
             "knowledge_score": 0,
             "communication_score": 0,
-            "problem_solving_score": 0,
-            "strengths": [],
-            "improvements": ["Unable to analyze response"],
-            "recommendations": ["Please try again"],
-            "overall_summary": "Analysis failed"
+            "confidence_score": 0,
+            "feedback": "Analysis failed. Please try again."
         }

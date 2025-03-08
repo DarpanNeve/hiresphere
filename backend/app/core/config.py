@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     MONGODB_URL: str = "mongodb://localhost:27017"
     DATABASE_NAME: str = "ai_interviewer"
 
+    # Interview settings
+    DEFAULT_QUESTION_COUNT: int = 5
+    MIN_QUESTION_COUNT: int = 3
+    MAX_QUESTION_COUNT: int = 10
+
     # Email settings
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
