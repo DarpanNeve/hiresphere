@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-
+import os
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Interviewer"
@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # LLM timeout settings
     LLM_REQUEST_TIMEOUT: int = 120  # seconds
 
+    # Rate limiting
+    RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+
+    # Security headers
+    SECURITY_HEADERS: bool = os.getenv("SECURITY_HEADERS", "True").lower() == "true"
     class Config:
         env_file = ".env"
 
