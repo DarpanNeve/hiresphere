@@ -11,8 +11,7 @@ export class APIError extends Error {
 }
 
 export const api = axios.create({
-  baseURL: "https://hiresphere-eita.onrender.com/api",
-  // baseURL: "http://localhost:8000/api",
+  baseURL: __API_URL__,
   timeout: 30000, // 30 second timeout for all requests
 });
 
