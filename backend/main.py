@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.db.mongodb import connect_to_mongo, close_mongo_connection
 from app.routes import auth, interviews, feedback
-from app.routes.hr import candidates, interview_links, reports, subscription
+from app.routes.hr import candidates, interview_links, reports, subscription,dashboard
 from app.core.config import settings
 import logging
 
@@ -76,6 +76,13 @@ app.include_router(
     subscription.router,
     prefix=f"{settings.API_V1_STR}/hr/subscription",
     tags=["hr", "subscription"]
+)
+
+# Add dashboard router
+app.include_router(
+    dashboard.router,
+    prefix=f"{settings.API_V1_STR}/hr/dashboard",
+    tags=["hr", "dashboard"]
 )
 
 # Public interview routes

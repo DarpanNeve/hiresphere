@@ -3,11 +3,8 @@ from bson import ObjectId
 from app.db.mongodb import db
 from app.schemas.interview_link import InterviewLinkCreate, InterviewLinkUpdate, PublicInterviewStart, \
     PublicInterviewComplete
+from app.services.openai import generate_questions
 from app.services.email import send_interview_email
-import secrets
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
@@ -16,6 +13,7 @@ async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
         expires_at = datetime.utcnow() + timedelta(days=link_in.expires_in)
 
         # Generate unique token
+        import secrets
         token = secrets.token_urlsafe(16)
 
         link_data = {
@@ -33,27 +31,23 @@ async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
         }
 
         result = await db.database.interview_links.insert_one(link_data)
+        link_data["id"] = str(result.inserted_id)
+        link_data["_id"] = result.inserted_id
 
-        # Prepare response data
-        response_data = {
-            "_id": str(result.inserted_id),
-            "hr_id": str(link_data["hr_id"]),
-            **{k: v for k, v in link_data.items() if k not in ["_id", "hr_id"]},
-            "url": f"https://hiresphere-eita.onrender.com/i/{token}",
-            "is_expired": False
-        }
+        # Add URL to response
+        link_data["url"] = f"https://ai-interviewer.com/i/{token}"
+        link_data["is_expired"] = False
 
         # Send email to candidate
         await send_interview_email(
             candidate_email=link_in.candidate_email,
             candidate_name=link_in.candidate_name,
-            interview_link=response_data["url"],
+            interview_link=link_data["url"],
             position=link_in.position
         )
 
-        return response_data
+        return link_data
     except Exception as e:
-        logger.error(f"Failed to create interview link: {str(e)}")
         raise Exception(f"Failed to create interview link: {str(e)}")
 
 
@@ -81,10 +75,7 @@ async def get_interview_link(link_id: str):
     try:
         link = await db.database.interview_links.find_one({"_id": ObjectId(link_id)})
         if link:
-            # Convert ObjectId to string
-            link["id"] = str(link["_id"])  # Add string ID for API response
-            link["_id"] = str(link["_id"])
-            link["hr_id"] = str(link["hr_id"])
+            link["id"] = str(link["_id"])
             link["url"] = f"https://ai-interviewer.com/i/{link['token']}"
             link["is_expired"] = link["expires_at"] < datetime.utcnow()
         return link
@@ -100,7 +91,7 @@ async def get_interview_link_by_token(token: str):
             link["id"] = str(link["_id"])  # Add string ID for API response
             link["_id"] = str(link["_id"])
             link["hr_id"] = str(link["hr_id"])
-            link["url"] = f"https://ai-interviewer.com/i/{token}"
+            link["url"] = f"https://hiresphere-eita.onrender.com/i/{token}"
             link["is_expired"] = link["expires_at"] < datetime.utcnow()
         return link
     except Exception as e:
@@ -136,6 +127,19 @@ async def delete_interview_link(link_id: str):
 
 async def resend_interview_email(link_id: str):
     try:
+        # Get the link data
+        link = await get_interview_link(link_id)
+        if not link:
+            raise Exception("Interview link not found")
+
+        # Send the email
+        await send_interview_email(
+            candidate_email=link["candidate_email"],
+            candidate_name=link["candidate_name"],
+            interview_link=link["url"],
+            position=link["position"]
+        )
+
         # Update sent count
         await db.database.interview_links.update_one(
             {"_id": ObjectId(link_id)},
@@ -144,8 +148,6 @@ async def resend_interview_email(link_id: str):
                 "$set": {"updated_at": datetime.utcnow()}
             }
         )
-
-        # TODO: Actually send the email (would be implemented in a real system)
 
         return await get_interview_link(link_id)
     except Exception as e:
@@ -185,17 +187,31 @@ async def start_public_interview(token: str, candidate_info: PublicInterviewStar
         if link["completed"]:
             raise Exception("This interview has already been completed")
 
-        # Generate questions based on the topic
-        questions = [
-            "What is your experience with this role?",
-            "Describe a challenging project you worked on",
-            "How do you handle difficult situations?",
-            "What are your strengths and weaknesses?",
-            "Why are you interested in this position?"
-        ]
+        # Generate dynamic questions based on the topic and position
+        questions = await generate_questions(
+            topic=link["topic"],
+            position=link["position"],
+            seniority="mid-level"  # This could be made configurable
+        )
+
+        # Store the questions in the database for this interview
+        await db.database.interview_links.update_one(
+            {"token": token},
+            {
+                "$set": {
+                    "questions": questions,
+                    "candidate_info": {
+                        "name": candidate_info.name,
+                        "email": candidate_info.email
+                    },
+                    "started_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
 
         return {
-            "questions": questions
+            "questions": [q["question"] for q in questions]
         }
     except Exception as e:
         raise Exception(f"Failed to start public interview: {str(e)}")
@@ -214,12 +230,30 @@ async def complete_public_interview(token: str, data: PublicInterviewComplete):
         if link["completed"]:
             raise Exception("This interview has already been completed")
 
+        # Create an interview record with the responses
+        interview_data = {
+            "link_id": link["_id"],
+            "hr_id": link["hr_id"],
+            "candidate_name": data.candidateInfo["name"],
+            "candidate_email": data.candidateInfo["email"],
+            "position": link["position"],
+            "topic": link["topic"],
+            "questions": link.get("questions", []),
+            "responses": data.responses,
+            "completed_at": datetime.utcnow(),
+            "created_at": link.get("started_at") or datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+
+        await db.database.interviews.insert_one(interview_data)
+
         # Mark the link as completed
         await db.database.interview_links.update_one(
             {"token": token},
             {
                 "$set": {
                     "completed": True,
+                    "completed_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow()
                 }
             }

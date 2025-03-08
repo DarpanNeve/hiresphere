@@ -3,7 +3,29 @@ import { api, APIError } from "./config";
 export const interviewApi = {
   startInterview: async (topic) => {
     try {
-      const response = await api.post("/interviews/start", { topic });
+      const response = await api.post("/interviews/start", {
+        topic,
+        question_types: [
+          "technical",
+          "behavioral",
+          "problem-solving",
+          "experience",
+          "scenario",
+        ],
+        difficulty_distribution: {
+          easy: 2,
+          medium: 4,
+          hard: 2,
+        },
+        categories: [
+          "core_concepts",
+          "best_practices",
+          "problem_solving",
+          "system_design",
+          "communication",
+          "teamwork",
+        ],
+      });
       return response.data;
     } catch (error) {
       if (error instanceof APIError) throw error;

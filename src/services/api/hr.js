@@ -62,6 +62,26 @@ export const hrApi = {
         position: linkData.position,
         topic: linkData.topic,
         expires_in: parseInt(linkData.expiresIn) || 7,
+        question_types: [
+          "technical",
+          "behavioral",
+          "problem-solving",
+          "experience",
+          "scenario",
+        ],
+        difficulty_distribution: {
+          easy: 2,
+          medium: 4,
+          hard: 2,
+        },
+        categories: [
+          "core_concepts",
+          "best_practices",
+          "problem_solving",
+          "system_design",
+          "communication",
+          "teamwork",
+        ],
       };
 
       const response = await api.post("/hr/interview-links/", transformedData);
@@ -100,7 +120,13 @@ export const hrApi = {
 
   getReports: async (filter) => {
     try {
-      const response = await api.get("/hr/reports", { params: filter });
+      const params = new URLSearchParams({
+        ...filter,
+        include_analytics: true,
+        include_feedback: true,
+        include_responses: true,
+      });
+      const response = await api.get(`/hr/reports?${params}`);
       return response.data;
     } catch (error) {
       if (error instanceof APIError) throw error;
@@ -110,7 +136,13 @@ export const hrApi = {
 
   getReportStats: async (filter) => {
     try {
-      const response = await api.get("/hr/reports/stats", { params: filter });
+      const params = new URLSearchParams({
+        ...filter,
+        include_trends: true,
+        include_position_stats: true,
+        include_score_distribution: true,
+      });
+      const response = await api.get(`/hr/reports/stats?${params}`);
       return response.data;
     } catch (error) {
       if (error instanceof APIError) throw error;
@@ -120,8 +152,17 @@ export const hrApi = {
 
   getDashboardStats: async () => {
     try {
-      const response = await api.get("/hr/dashboard/stats");
-      return response.data;
+      const response = await api.get("/hr/dashboard/stats?include_trends=true");
+      return {
+        totalCandidates: response.data.total_candidates || 0,
+        activeInterviews: response.data.active_interviews || 0,
+        completedInterviews: response.data.completed_interviews || 0,
+        averageScore: response.data.average_score || 0,
+        recentTrends: response.data.trends || [],
+        positionStats: response.data.position_stats || [],
+        completionRate: response.data.completion_rate || 0,
+        averageResponseTime: response.data.average_response_time || 0,
+      };
     } catch (error) {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to fetch dashboard stats", 500);
@@ -130,8 +171,28 @@ export const hrApi = {
 
   getRecentInterviews: async () => {
     try {
-      const response = await api.get("/hr/dashboard/recent-interviews");
-      return response.data;
+      const response = await api.get(
+        "/hr/dashboard/recent-interviews?include_details=true"
+      );
+      return response.data.interviews.map((interview) => ({
+        id: interview.id,
+        candidateName: interview.candidate_name,
+        position: interview.position,
+        date: interview.created_at,
+        status: interview.status,
+        duration: interview.duration,
+        scores: interview.scores
+          ? {
+              knowledge: Math.round(interview.scores.knowledge * 10) / 10,
+              communication:
+                Math.round(interview.scores.communication * 10) / 10,
+              confidence: Math.round(interview.scores.confidence * 10) / 10,
+            }
+          : null,
+        feedback: interview.feedback,
+        questionCount: interview.question_count,
+        completionTime: interview.completion_time,
+      }));
     } catch (error) {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to fetch recent interviews", 500);
