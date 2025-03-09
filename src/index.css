@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  --color-primary: #3490dc; /* define your primary color */
+  --color-secondary: #ffed4a; /* define your secondary color */
+  --border-radius-lg: 0.5rem;
+  --border-radius-md: 0.375rem;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #f3f4f6;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Button Primary */
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--border-radius-lg);
+  transition: background-color 200ms, border-color 200ms, color 200ms;
+}
+.btn-primary:hover {
+  background-color: var(--color-secondary);
+}
+
+/* Button Outline */
+.btn-outline {
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--border-radius-lg);
+  transition: background-color 200ms, border-color 200ms, color 200ms;
+}
+.btn-outline:hover {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+/* Input Field */
+.input-field {
+  margin-top: 0.25rem;
+  display: block;
+  width: 100%;
+  border-radius: var(--border-radius-md);
+  border: 1px solid #d1d5db; /* equivalent to border-gray-300 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* similar to shadow-sm */
+  background-color: #fff;
+  padding: 0.5rem 1rem;
+}
+.input-field:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(52, 144, 220, 0.5); /* mimicking focus:ring effects */
+}
+
+/* Card */
+.card {
+  background-color: #fff;
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* approximation of shadow-md */
+  padding: 1.5rem; /* equivalent to p-6 */
+}
