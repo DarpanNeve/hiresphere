@@ -11,6 +11,7 @@ import {
   FiUsers,
   FiLink,
   FiFileText,
+  FiCreditCard,
 } from "react-icons/fi";
 
 const Navbar = () => {
@@ -64,12 +65,20 @@ const Navbar = () => {
                     </Link>
                   </>
                 ) : isAdmin() ? (
-                  <Link
-                    to="/admin/dashboard"
-                    className="text-gray-700 hover:text-primary flex items-center"
-                  >
-                    <FiHome className="mr-1" /> Admin Dashboard
-                  </Link>
+                  <>
+                    <Link
+                      to="/admin/dashboard"
+                      className="text-gray-700 hover:text-primary flex items-center"
+                    >
+                      <FiHome className="mr-1" /> Dashboard
+                    </Link>
+                    <Link
+                      to="/admin/my-subscription"
+                      className="text-gray-700 hover:text-primary flex items-center"
+                    >
+                      <FiCreditCard className="mr-1" /> My Subscription
+                    </Link>
+                  </>
                 ) : (
                   <>
                     <Link
@@ -144,12 +153,20 @@ const Navbar = () => {
                             </Link>
                           </>
                         ) : isAdmin() ? (
-                          <Link
-                            to="/admin/dashboard"
-                            className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                          >
-                            Admin Dashboard
-                          </Link>
+                          <>
+                            <Link
+                              to="/admin/dashboard"
+                              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              Dashboard
+                            </Link>
+                            <Link
+                              to="/admin/my-subscription"
+                              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              My Subscription
+                            </Link>
+                          </>
                         ) : (
                           <>
                             <Link

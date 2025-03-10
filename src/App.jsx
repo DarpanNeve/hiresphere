@@ -15,6 +15,7 @@ import AdminDashboard from "./pages/Admin/Dashboard";
 import AdminHRManagement from "./pages/Admin/HRManagement";
 import AdminSubscriptions from "./pages/Admin/Subscriptions";
 import AdminSettings from "./pages/Admin/Settings";
+import MySubscription from "./pages/Admin/MySubscription";
 import PublicInterview from "./pages/PublicInterview";
 
 function App() {
@@ -49,6 +50,7 @@ function App() {
               element={<AdminSubscriptions />}
             />
             <Route path="admin/settings" element={<AdminSettings />} />
+            <Route path="admin/my-subscription" element={<MySubscription />} />
           </Route>
         </Route>
 

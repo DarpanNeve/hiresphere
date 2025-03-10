@@ -4,7 +4,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security import HTTPBearer
 from app.db.mongodb import connect_to_mongo, close_mongo_connection
-from app.routes import auth, interviews, feedback
+from app.routes import auth, interviews, feedback, subscription_plans
 from app.routes.hr import candidates, interview_links, reports, dashboard
 from app.core.config import settings
 import logging
@@ -70,6 +70,13 @@ app.include_router(
     feedback.router,
     prefix=f"{settings.API_V1_STR}/feedback",
     tags=["feedback"]
+)
+
+# Public routes
+app.include_router(
+    subscription_plans.router,
+    prefix=f"{settings.API_V1_STR}/subscription-plans",
+    tags=["subscription-plans"]
 )
 
 # HR routes

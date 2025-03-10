@@ -9,6 +9,7 @@ const Register = () => {
     password: "",
     confirmPassword: "",
     role: "candidate", // Default role
+    company_name: "", // Added company name field
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -31,9 +32,10 @@ const Register = () => {
         password: formData.password,
         full_name: formData.full_name,
         role: formData.role,
+        company_name: formData.company_name, // Include company name in registration
       });
 
-      // If admin, redirect to subscription page
+      // Redirect to appropriate page based on role
       if (formData.role === "admin") {
         navigate("/admin/subscriptions");
       } else {
@@ -112,6 +114,23 @@ const Register = () => {
                 <option value="admin">Admin</option>
               </select>
             </div>
+            {formData.role === "admin" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Company Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.company_name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, company_name: e.target.value })
+                  }
+                  className="input-field"
+                  placeholder="Enter your company name"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700">
                 Password

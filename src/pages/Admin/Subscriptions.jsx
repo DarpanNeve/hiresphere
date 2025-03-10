@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { FiSearch, FiEdit2, FiTrash2, FiCheck, FiX } from "react-icons/fi";
-import { adminApi } from "../../services/api";
+import { adminApi, subscriptionApi } from "../../services/api";
 
 const Subscriptions = () => {
   const [subscriptions, setSubscriptions] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -11,17 +12,21 @@ const Subscriptions = () => {
   const [selectedSubscription, setSelectedSubscription] = useState(null);
 
   useEffect(() => {
-    fetchSubscriptions();
+    fetchData();
   }, []);
 
-  const fetchSubscriptions = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const data = await adminApi.getAllSubscriptions();
-      setSubscriptions(data);
+      const [subscriptionsData, plansData] = await Promise.all([
+        adminApi.getAllSubscriptions(),
+        subscriptionApi.getPlans(),
+      ]);
+      setSubscriptions(subscriptionsData);
+      setPlans(plansData);
       setLoading(false);
     } catch (err) {
-      setError("Failed to load subscriptions: " + err.message);
+      setError("Failed to load data: " + err.message);
       setLoading(false);
     }
   };
@@ -66,10 +71,14 @@ const Subscriptions = () => {
 
   const filteredSubscriptions = subscriptions.filter(
     (sub) =>
-      sub.hr_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sub.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sub.plan.toLowerCase().includes(searchTerm.toLowerCase())
+      sub.hr_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      sub.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      sub.plan?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const getPlanDetails = (planId) => {
+    return plans.find((p) => p.id === planId) || { name: "Unknown", price: 0 };
+  };
 
   if (loading) {
     return (
@@ -113,8 +122,7 @@ const Subscriptions = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  HR Details Continuing with the Subscriptions component table
-                  headers...
+                  HR Details
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Plan
@@ -134,85 +142,87 @@ const Subscriptions = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredSubscriptions.map((subscription) => (
-                <tr key={subscription._id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="font-medium text-gray-900">
-                      {subscription.hr_name}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {subscription.company_name}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {subscription.plan.charAt(0).toUpperCase() +
-                        subscription.plan.slice(1)}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      ${subscription.amount}/month
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        subscription.status === "active"
-                          ? "bg-green-100 text-green-800"
-                          : subscription.status === "trial"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {subscription.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {subscription.payment_method.type === "credit_card" ? (
-                        <>
-                          <span className="font-medium">Card</span> ending in{" "}
-                          {subscription.payment_method.last4}
-                        </>
-                      ) : (
-                        "No payment method"
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Last payment: ${subscription.last_payment_amount}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(
-                      subscription.next_payment_date
-                    ).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex justify-end space-x-2">
-                      <button
-                        onClick={() => {
-                          setSelectedSubscription(subscription);
-                          setShowEditModal(true);
-                        }}
-                        className="text-gray-600 hover:text-gray-900"
-                        title="Edit Subscription"
+              {filteredSubscriptions.map((subscription) => {
+                const planDetails = getPlanDetails(subscription.plan);
+                return (
+                  <tr key={subscription._id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="font-medium text-gray-900">
+                        {subscription.hr_name}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {subscription.company_name}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        {planDetails.name}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        ${planDetails.price}/month
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          subscription.status === "active"
+                            ? "bg-green-100 text-green-800"
+                            : subscription.status === "trial"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
                       >
-                        <FiEdit2 />
-                      </button>
-                      {subscription.status === "active" && (
+                        {subscription.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {subscription.payment_method?.type === "credit_card" ? (
+                          <>
+                            <span className="font-medium">Card</span> ending in{" "}
+                            {subscription.payment_method.last4}
+                          </>
+                        ) : (
+                          "No payment method"
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Last payment: ${subscription.last_payment_amount || 0}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(
+                        subscription.next_payment_date
+                      ).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex justify-end space-x-2">
                         <button
-                          onClick={() =>
-                            handleCancelSubscription(subscription._id)
-                          }
-                          className="text-red-600 hover:text-red-900"
-                          title="Cancel Subscription"
+                          onClick={() => {
+                            setSelectedSubscription(subscription);
+                            setShowEditModal(true);
+                          }}
+                          className="text-gray-600 hover:text-gray-900"
+                          title="Edit Subscription"
                         >
-                          <FiTrash2 />
+                          <FiEdit2 />
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {subscription.status === "active" && (
+                          <button
+                            onClick={() =>
+                              handleCancelSubscription(subscription._id)
+                            }
+                            className="text-red-600 hover:text-red-900"
+                            title="Cancel Subscription"
+                          >
+                            <FiTrash2 />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {filteredSubscriptions.length === 0 && (
                 <tr>
@@ -250,9 +260,11 @@ const Subscriptions = () => {
                   }
                   className="input-field"
                 >
-                  <option value="starter">Starter</option>
-                  <option value="professional">Professional</option>
-                  <option value="enterprise">Enterprise</option>
+                  {plans.map((plan) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.name} - ${plan.price}/month
+                    </option>
+                  ))}
                 </select>
               </div>
 

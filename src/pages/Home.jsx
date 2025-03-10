@@ -13,6 +13,7 @@ import {
   Play,
   ArrowRight,
 } from "lucide-react";
+import PricingSection from "../components/PricingSection";
 
 function FeatureCard({ icon: Icon, title, description }) {
   return (
@@ -175,6 +176,9 @@ const Home = () => {
           />
         </div>
       </div>
+
+      {/* Pricing Section */}
+      <PricingSection />
 
       {/* CTA Section */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
