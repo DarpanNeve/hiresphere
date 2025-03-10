@@ -25,6 +25,9 @@ export const adminApi = {
 
   createHRUser: async (userData) => {
     try {
+      // Get the current admin's ID from localStorage
+      const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
+
       // Transform the data to match the backend expectations
       const transformedData = {
         email: userData.email,
@@ -33,6 +36,7 @@ export const adminApi = {
         company_name: userData.company_name,
         role: "hr",
         status: userData.status || "active",
+        created_by: currentUser._id, // Add the created_by field as a string
       };
 
       const response = await api.post("/admin/hr-users/", transformedData);

@@ -4,8 +4,8 @@ import {
   FiSearch,
   FiEdit2,
   FiTrash2,
-  FiUserCheck,
-  FiUserX,
+  FiMail,
+  FiLink,
 } from "react-icons/fi";
 import { adminApi } from "../../services/api";
 
@@ -43,6 +43,7 @@ const HRManagement = () => {
 
   const handleAddHR = async () => {
     try {
+      // Validate form
       if (
         !newUser.full_name ||
         !newUser.email ||
@@ -53,6 +54,7 @@ const HRManagement = () => {
         return;
       }
 
+      // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(newUser.email)) {
         setError("Please enter a valid email address");
@@ -60,7 +62,11 @@ const HRManagement = () => {
       }
 
       const result = await adminApi.createHRUser(newUser);
+
+      // Add the new user to the list
       setHRUsers([result, ...hrUsers]);
+
+      // Reset form and close modal
       setNewUser({
         full_name: "",
         email: "",
@@ -75,20 +81,30 @@ const HRManagement = () => {
     }
   };
 
-  const handleUpdateHR = async () => {
+  const handleEditHR = async () => {
     try {
       if (!selectedUser) {
         setError("No user selected for editing");
         return;
       }
 
+      // Validate email if it was changed
+      if (selectedUser.email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(selectedUser.email)) {
+          setError("Please enter a valid email address");
+          return;
+        }
+      }
+
       const result = await adminApi.updateHRUser(
         selectedUser._id,
         selectedUser
       );
-      setHRUsers(
-        hrUsers.map((user) => (user._id === result._id ? result : user))
-      );
+
+      // Update the user in the list
+      setHRUsers(hrUsers.map((u) => (u._id === result._id ? result : u)));
+
       setShowEditModal(false);
       setSelectedUser(null);
       setError("");
@@ -101,6 +117,8 @@ const HRManagement = () => {
     if (confirm("Are you sure you want to delete this HR user?")) {
       try {
         await adminApi.deleteHRUser(id);
+
+        // Update the list
         setHRUsers(hrUsers.filter((user) => user._id !== id));
         setError("");
       } catch (err) {
@@ -109,24 +127,11 @@ const HRManagement = () => {
     }
   };
 
-  const handleToggleStatus = async (user) => {
-    try {
-      const newStatus = user.status === "active" ? "inactive" : "active";
-      const result = await adminApi.updateHRUser(user._id, {
-        ...user,
-        status: newStatus,
-      });
-      setHRUsers(hrUsers.map((u) => (u._id === result._id ? result : u)));
-    } catch (err) {
-      setError("Failed to update user status: " + err.message);
-    }
-  };
-
   const filteredUsers = hrUsers.filter(
     (user) =>
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.company_name.toLowerCase().includes(searchTerm.toLowerCase())
+      user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.company_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
@@ -209,12 +214,12 @@ const HRManagement = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        user.status === "active"
+                        (user.status || "active") === "active"
                           ? "bg-green-100 text-green-800"
                           : "bg-red-100 text-red-800"
                       }`}
                     >
-                      {user.status.toUpperCase()}
+                      {(user.status || "active").toUpperCase()}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -232,25 +237,6 @@ const HRManagement = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex justify-end space-x-2">
-                      <button
-                        onClick={() => handleToggleStatus(user)}
-                        className={`${
-                          user.status === "active"
-                            ? "text-red-600 hover:text-red-900"
-                            : "text-green-600 hover:text-green-900"
-                        }`}
-                        title={
-                          user.status === "active"
-                            ? "Deactivate User"
-                            : "Activate User"
-                        }
-                      >
-                        {user.status === "active" ? (
-                          <FiUserX />
-                        ) : (
-                          <FiUserCheck />
-                        )}
-                      </button>
                       <button
                         onClick={() => {
                           setSelectedUser(user);
@@ -453,7 +439,7 @@ const HRManagement = () => {
                   Status
                 </label>
                 <select
-                  value={selectedUser.status}
+                  value={selectedUser.status || "active"}
                   onChange={(e) =>
                     setSelectedUser({ ...selectedUser, status: e.target.value })
                   }
@@ -476,7 +462,7 @@ const HRManagement = () => {
               >
                 Cancel
               </button>
-              <button onClick={handleUpdateHR} className="btn-primary">
+              <button onClick={handleEditHR} className="btn-primary">
                 Save Changes
               </button>
             </div>

@@ -20,8 +20,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const userData = await authApi.getProfile();
       setUser(userData);
+      // Store user data in localStorage for access by other components
+      localStorage.setItem("user", JSON.stringify(userData));
     } catch (error) {
       localStorage.removeItem("token");
+      localStorage.removeItem("user");
     } finally {
       setLoading(false);
     }
@@ -49,6 +52,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("user");
     setUser(null);
   };
 

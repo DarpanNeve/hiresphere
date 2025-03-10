@@ -1,13 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { hrApi } from "../../services/api";
-import {
-  FiUsers,
-  FiFileText,
-  FiLink,
-  FiBarChart2,
-  FiArrowRight,
-} from "react-icons/fi";
+import { FiUsers, FiFileText, FiLink, FiBarChart2 } from "react-icons/fi";
 
 const HRDashboard = () => {
   const [stats, setStats] = useState({
@@ -38,30 +32,19 @@ const HRDashboard = () => {
       // Fetch recent interviews
       const recentInterviewData = await hrApi.getRecentInterviews();
 
-      // Fetch subscription data
-      let subscriptionData = {
-        plan: "starter",
-        status: "trial",
-        daysRemaining: 14,
-      };
-      try {
-        subscriptionData = await hrApi.getSubscription();
-      } catch (subError) {
-        console.error("Failed to fetch subscription data:", subError);
-        // Continue with default subscription data
-      }
-
+      // Set the data
       setStats({
         ...dashboardStats,
-        subscriptionStatus: subscriptionData.status,
-        subscriptionPlan: subscriptionData.plan,
-        daysRemaining: subscriptionData.days_remaining || 0,
+        subscriptionStatus: "active", // Default values since subscription endpoint is not ready
+        subscriptionPlan: "trial",
+        daysRemaining: 14,
       });
 
-      setRecentInterviews(recentInterviewData);
+      setRecentInterviews(recentInterviewData.interviews || []);
       setLoading(false);
     } catch (err) {
-      setError("Failed to load dashboard data: " + err.message);
+      console.error("Failed to fetch dashboard data:", err);
+      setError("Failed to load dashboard data. Please try again later.");
       setLoading(false);
     }
   };
@@ -96,32 +79,6 @@ const HRDashboard = () => {
           {error}
         </div>
       )}
-
-      {/* Subscription Status */}
-      <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg p-6 mb-8">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold mb-2">Subscription Status</h2>
-            <p className="text-white opacity-90 mb-1">
-              Plan: {stats.subscriptionPlan}
-            </p>
-            <p className="text-white opacity-90">
-              Status: {stats.subscriptionStatus}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-2xl font-bold">
-              {stats.daysRemaining} days remaining
-            </p>
-            <Link
-              to="/hr/subscription"
-              className="inline-block mt-2 bg-white text-primary px-4 py-2 rounded-md hover:bg-gray-100 transition-colors"
-            >
-              Manage Subscription
-            </Link>
-          </div>
-        </div>
-      </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -167,14 +124,14 @@ const HRDashboard = () => {
       </div>
 
       {/* Recent Interviews */}
-      <div className="card mb-8">
+      <div className="card">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold">Recent Interviews</h2>
           <Link
             to="/hr/reports"
             className="text-primary hover:text-secondary flex items-center"
           >
-            View All Reports <FiArrowRight className="ml-1" />
+            View All Reports <FiBarChart2 className="ml-1" />
           </Link>
         </div>
 
@@ -226,8 +183,7 @@ const HRDashboard = () => {
                           : "bg-yellow-100 text-yellow-800"
                       }`}
                     >
-                      {interview.status.charAt(0).toUpperCase() +
-                        interview.status.slice(1)}
+                      {interview.status || "Pending"}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
