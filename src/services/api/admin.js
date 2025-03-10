@@ -25,9 +25,22 @@ export const adminApi = {
 
   createHRUser: async (userData) => {
     try {
-      const response = await api.post("/admin/hr-users", userData);
+      // Transform the data to match the backend expectations
+      const transformedData = {
+        email: userData.email,
+        password: userData.password,
+        full_name: userData.full_name,
+        company_name: userData.company_name,
+        role: "hr",
+        status: userData.status || "active",
+      };
+
+      const response = await api.post("/admin/hr-users/", transformedData);
       return response.data;
     } catch (error) {
+      if (error.response?.data?.detail) {
+        throw new APIError(error.response.data.detail, error.response.status);
+      }
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to create HR user", 500);
     }

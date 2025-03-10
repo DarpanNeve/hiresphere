@@ -13,6 +13,10 @@ export class APIError extends Error {
 export const api = axios.create({
   baseURL: __API_URL__,
   timeout: 30000, // 30 second timeout for all requests
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
 });
 
 // Request interceptor for adding auth token
@@ -38,6 +42,15 @@ api.interceptors.response.use(
         message = error.response.data.map((err) => err.msg).join(", ");
       }
 
+      // Log the error details for debugging
+      console.error("API Error:", {
+        status: code,
+        message: message,
+        details: details,
+        url: error.config.url,
+        method: error.config.method,
+      });
+
       switch (code) {
         case 401:
           localStorage.removeItem("token");
@@ -56,8 +69,10 @@ api.interceptors.response.use(
 
       throw new APIError(message, code, details);
     } else if (error.request) {
+      console.error("Network Error:", error.request);
       throw new APIError("Network error - no response from server", 0);
     } else {
+      console.error("Request Error:", error.message);
       throw new APIError("Failed to make request", 0);
     }
   }
