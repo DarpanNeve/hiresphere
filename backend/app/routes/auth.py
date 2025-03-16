@@ -4,6 +4,12 @@ from app.core.auth import authenticate_user, create_access_token, get_current_us
 from app.schemas.user import UserCreate, User
 from app.services.user import create_user, get_user_by_email
 from app.db.mongodb import db
+from datetime import timedelta
+from app.core.config import settings
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -59,10 +65,23 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+
+    # Create access token with expiry
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=access_token_expires
+    )
+
+    logger.info(f"Login successful for user: {user.email}")
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert to seconds
+    }
 
 
 @router.get("/me", response_model=User)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
+    logger.info(f"Fetching user info for: {current_user.email}")
     return current_user

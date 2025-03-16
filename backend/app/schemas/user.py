@@ -26,14 +26,15 @@ class PyObjectId(ObjectId):
 class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
-    role: Optional[str] = "user"  # Default role is "user"
-    company_name: Optional[str] = None
+    role: Optional[str] = "candidate"  # Default role
+    organization_id: Optional[PyObjectId] = None
+    created_by: Optional[PyObjectId] = None
     status: Optional[str] = "active"
+    company_name: Optional[str] = None
 
 
 class UserCreate(UserBase):
     password: str
-    created_by: Optional[str] = None  # Added created_by field
 
 
 class UserUpdate(UserBase):
@@ -42,7 +43,8 @@ class UserUpdate(UserBase):
 
 class UserInDBBase(UserBase):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
-    created_at: datetime
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     hashed_password: str
 
     class Config:
@@ -50,6 +52,19 @@ class UserInDBBase(UserBase):
         populate_by_name = True
         arbitrary_types_allowed = True
         from_attributes = True
+
+    @classmethod
+    def from_db(cls, data: dict):
+        if data is None:
+            return None
+        # Convert ObjectId to string for _id field
+        if "_id" in data:
+            data["_id"] = PyObjectId(data["_id"])
+        if "organization_id" in data and data["organization_id"]:
+            data["organization_id"] = PyObjectId(data["organization_id"])
+        if "created_by" in data and data["created_by"]:
+            data["created_by"] = PyObjectId(data["created_by"])
+        return cls(**data)
 
 
 class User(UserInDBBase):
