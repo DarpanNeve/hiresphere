@@ -27,8 +27,8 @@ class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     role: Optional[str] = "candidate"  # Default role
-    organization_id: Optional[PyObjectId] = None
-    created_by: Optional[PyObjectId] = None
+    organization_id: Optional[str] = None
+    created_by: Optional[str] = None
     status: Optional[str] = "active"
     company_name: Optional[str] = None
 
@@ -61,9 +61,9 @@ class UserInDBBase(UserBase):
         if "_id" in data:
             data["_id"] = PyObjectId(data["_id"])
         if "organization_id" in data and data["organization_id"]:
-            data["organization_id"] = PyObjectId(data["organization_id"])
+            data["organization_id"] = str(data["organization_id"])
         if "created_by" in data and data["created_by"]:
-            data["created_by"] = PyObjectId(data["created_by"])
+            data["created_by"] = str(data["created_by"])
         return cls(**data)
 
 

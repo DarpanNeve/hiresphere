@@ -2,7 +2,7 @@ from typing import Optional
 from datetime import datetime
 from bson import ObjectId
 from app.db.mongodb import db
-from app.schemas.user import User
+from app.schemas.user import User, UserCreate, UserUpdate
 from app.core.security import get_password_hash
 
 
@@ -17,24 +17,24 @@ async def get_user_by_email(email: str) -> Optional[User]:
         raise Exception(f"Failed to fetch user by email: {str(e)}")
 
 
-async def create_user(user_in: dict) -> User:
+async def create_user(user_in: UserCreate) -> User:
     """Create a new user."""
     try:
         # Check if user already exists
-        existing_user = await get_user_by_email(user_in["email"])
+        existing_user = await get_user_by_email(user_in.email)
         if existing_user:
             raise ValueError("Email already registered")
 
         # Create user data
         user_data = {
-            "email": user_in["email"],
-            "hashed_password": get_password_hash(user_in["password"]),
-            "full_name": user_in.get("full_name"),
-            "role": user_in.get("role", "candidate"),
-            "organization_id": ObjectId(user_in["organization_id"]) if user_in.get("organization_id") else None,
-            "created_by": ObjectId(user_in["created_by"]) if user_in.get("created_by") else None,
+            "email": user_in.email,
+            "hashed_password": get_password_hash(user_in.password),
+            "full_name": user_in.full_name,
+            "role": user_in.role,
+            "organization_id": ObjectId(user_in.organization_id) if user_in.organization_id else None,
+            "created_by": ObjectId(user_in.created_by) if user_in.created_by else None,
             "status": "active",
-            "company_name": user_in.get("company_name"),
+            "company_name": user_in.company_name,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
