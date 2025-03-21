@@ -34,13 +34,13 @@ class MongoDB:
                         minPoolSize=settings.MONGODB_MIN_POOL_SIZE,
                         maxPoolSize=settings.MONGODB_MAX_POOL_SIZE,
                         maxIdleTimeMS=settings.MONGODB_MAX_IDLE_TIME_MS,
-                        connectTimeoutMS=settings.MONGODB_CONNECT_TIMEOUT_MS,
-                        serverSelectionTimeoutMS=settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+                        connectTimeoutMS=10000,  # Increased from 2000ms to 10000ms
+                        serverSelectionTimeoutMS=10000,  # Increased from 2000ms to 10000ms
+                        socketTimeoutMS=45000,  # Increased from 30000ms to 45000ms
+                        waitQueueTimeoutMS=15000,  # Increased from 10000ms to 15000ms
+                        heartbeatFrequencyMS=15000,  # Increased from 10000ms to 15000ms
                         retryWrites=True,
                         retryReads=True,
-                        socketTimeoutMS=30000,  # Increased socket timeout
-                        waitQueueTimeoutMS=10000,  # Wait queue timeout
-                        heartbeatFrequencyMS=10000,  # Heartbeat frequency
                     )
 
                     # Test the connection

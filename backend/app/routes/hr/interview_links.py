@@ -35,8 +35,12 @@ async def create_link(
             )
 
         link = await create_interview_link(link_in, str(current_user.id))
-        logger.info(f"Created interview link with ID: {link['_id']}")
 
+        # Convert ObjectId to string before returning
+        link["_id"] = str(link["_id"])
+        link["hr_id"] = str(link["hr_id"])
+
+        logger.info(f"Created interview link with ID: {link['_id']}")
         return link
     except Exception as e:
         logger.error(f"Failed to create interview link: {str(e)}")
@@ -59,8 +63,13 @@ async def list_links(current_user: User = Depends(get_current_user)):
             )
 
         links = await get_interview_links(str(current_user.id))
-        logger.info(f"Found {len(links)} interview links")
 
+        # Convert ObjectId to string for each link
+        for link in links:
+            link["_id"] = str(link["_id"])
+            link["hr_id"] = str(link["hr_id"])
+
+        logger.info(f"Found {len(links)} interview links")
         return links
     except Exception as e:
         logger.error(f"Failed to fetch interview links: {str(e)}", exc_info=True)
@@ -100,6 +109,10 @@ async def get_link_details(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this interview link"
             )
+
+        # Convert ObjectId to string
+        link["_id"] = str(link["_id"])
+        link["hr_id"] = str(link["hr_id"])
 
         logger.info(f"Successfully retrieved interview link details for ID: {link_id}")
         return link
@@ -190,6 +203,11 @@ async def resend_email(
             )
 
         updated_link = await resend_interview_email(link_id)
+
+        # Convert ObjectId to string
+        updated_link["_id"] = str(updated_link["_id"])
+        updated_link["hr_id"] = str(updated_link["hr_id"])
+
         logger.info(f"Successfully resent email for interview link {link_id}")
 
         return {"message": "Email sent successfully", "sent_count": updated_link["sent_count"]}

@@ -6,14 +6,15 @@ import * as poseDetection from "@tensorflow-models/pose-detection";
 export class InterviewMonitor {
   constructor(options = {}) {
     this.options = {
-      faceCheckInterval: 1000,
-      poseCheckInterval: 1000,
-      tabFocusInterval: 500,
-      maxWarnings: 3, // Maximum number of warnings before termination
-      warningTimeout: 10000, // 10 seconds between warnings
-      outOfFrameTimeout: 5000, // 5 seconds before triggering out of frame warning
-      maxHeadRotation: 45, // degrees
-      maxTabUnfocusTime: 3000, // milliseconds
+      faceCheckInterval: 4000, // Increased from 1000ms to 2000ms
+      poseCheckInterval: 4000, // Increased from 1000ms to 2000ms
+      tabFocusInterval: 2000,
+      maxWarnings: 9,
+      warningTimeout: 15000, // Increased from 10s to 15s
+      outOfFrameTimeout: 8000, // Increased from 5s to 8s
+      maxHeadRotation: 120, // Increased from 45 to 60 degrees
+      maxTabUnfocusTime: 5000, // Increased from 3s to 5s
+      warningThreshold: 3, // Number of consecutive violations before warning
       ...options,
     };
 
@@ -32,6 +33,7 @@ export class InterviewMonitor {
       tabFocusStartTime: Date.now(),
       lastFacePosition: null,
       lastPosePosition: null,
+      consecutiveViolations: 0,
       intervals: {
         face: null,
         pose: null,
@@ -54,13 +56,14 @@ export class InterviewMonitor {
 
   async initialize() {
     try {
-      // Load face detection model
+      // Load face detection model with more lenient settings
       this.models.face = await faceDetection.createDetector(
         faceDetection.SupportedModels.MediaPipeFaceDetector,
         {
           runtime: "tfjs",
-          refineLandmarks: true,
-          maxFaces: 1,
+          refineLandmarks: false, // Changed to false for better performance
+          maxFaces: 2, // Increased to 2 to be more lenient
+          minFaceSize: 0.1, // Reduced from default for better detection
         }
       );
 
@@ -69,11 +72,15 @@ export class InterviewMonitor {
         poseDetection.SupportedModels.MoveNet,
         {
           modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
+          enableSmoothing: true,
         }
       );
 
-      // Load BlazeFace for faster initial face detection
-      this.models.blazeFace = await blazeface.load();
+      // Load BlazeFace with more lenient settings
+      this.models.blazeFace = await blazeface.load({
+        maxFaces: 2,
+        scoreThreshold: 0.5, // Reduced threshold for easier detection
+      });
 
       this.state.isInitialized = true;
       return true;
@@ -101,7 +108,7 @@ export class InterviewMonitor {
     this.startFaceMonitoring(videoElement);
     this.startPoseMonitoring(videoElement);
 
-    // Reset violation counters and warnings
+    // Reset state
     this.state.violations = {
       outOfFrame: 0,
       multiplePersons: 0,
@@ -109,6 +116,7 @@ export class InterviewMonitor {
       tabSwitching: 0,
     };
     this.state.warnings = [];
+    this.state.consecutiveViolations = 0;
   }
 
   stopMonitoring() {
@@ -135,30 +143,39 @@ export class InterviewMonitor {
       if (!this.state.isMonitoring) return;
 
       try {
-        // Use BlazeFace first for quick detection
+        // Use BlazeFace for initial quick detection
         const blazeFaceResult = await this.models.blazeFace.estimateFaces(
           videoElement,
           false
         );
 
         if (blazeFaceResult.length === 0) {
-          // Confirm with MediaPipe for more accurate detection
+          // Confirm with MediaPipe before triggering warning
           const faces = await this.models.face.estimateFaces(videoElement);
 
           if (faces.length === 0) {
             this.handleNoFaceDetected();
           } else if (faces.length > 1) {
-            this.handleMultipleFaces();
+            // Only warn if multiple faces persist
+            if (
+              this.state.consecutiveViolations >= this.options.warningThreshold
+            ) {
+              this.handleMultipleFaces();
+            } else {
+              this.state.consecutiveViolations++;
+            }
           } else {
+            this.state.consecutiveViolations = 0;
             this.analyzeFacePosition(faces[0]);
           }
-        } else if (blazeFaceResult.length > 1) {
-          this.handleMultipleFaces();
         } else {
-          // Single face detected, proceed with detailed analysis
-          const faces = await this.models.face.estimateFaces(videoElement);
-          if (faces.length > 0) {
-            this.analyzeFacePosition(faces[0]);
+          this.state.consecutiveViolations = 0;
+          if (blazeFaceResult.length > 1) {
+            // Verify with MediaPipe before warning
+            const faces = await this.models.face.estimateFaces(videoElement);
+            if (faces.length > 1) {
+              this.handleMultipleFaces();
+            }
           }
         }
       } catch (error) {
@@ -192,40 +209,63 @@ export class InterviewMonitor {
       now - this.state.outOfFrameStartTime >
       this.options.outOfFrameTimeout
     ) {
-      this.state.violations.outOfFrame++;
-      this.triggerWarning("Face not detected in frame", "outOfFrame");
+      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
+        this.state.violations.outOfFrame++;
+        this.triggerWarning("Face not detected in frame", "outOfFrame");
+      } else {
+        this.state.consecutiveViolations++;
+      }
     }
   }
 
   handleMultipleFaces() {
-    this.state.violations.multiplePersons++;
-    this.triggerWarning("Multiple people detected in frame", "multiplePersons");
+    if (this.state.consecutiveViolations >= this.options.warningThreshold) {
+      this.state.violations.multiplePersons++;
+      this.triggerWarning(
+        "Multiple people detected in frame",
+        "multiplePersons"
+      );
+    } else {
+      this.state.consecutiveViolations++;
+    }
   }
 
   analyzeFacePosition(face) {
     this.state.outOfFrameStartTime = null;
+    this.state.consecutiveViolations = 0;
 
     // Calculate head rotation from face landmarks
     const rotation = this.calculateHeadRotation(face.keypoints);
 
+    // More lenient head rotation check
     if (
       Math.abs(rotation.yaw) > this.options.maxHeadRotation ||
-      Math.abs(rotation.pitch) > this.options.maxHeadRotation * 0.7
+      Math.abs(rotation.pitch) > this.options.maxHeadRotation * 0.8
     ) {
-      this.state.violations.lookingAway++;
-      this.triggerWarning("Looking away from screen", "lookingAway");
+      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
+        this.state.violations.lookingAway++;
+        this.triggerWarning("Looking away from screen", "lookingAway");
+      } else {
+        this.state.consecutiveViolations++;
+      }
     }
 
     this.state.lastFacePosition = face;
   }
 
   analyzePosePosition(pose) {
-    // Analyze upper body position
+    // More lenient posture thresholds
     const shoulderAlignment = this.calculateShoulderAlignment(pose.keypoints);
     const spineAlignment = this.calculateSpineAlignment(pose.keypoints);
 
-    if (shoulderAlignment < 0.7 || spineAlignment < 0.7) {
-      this.triggerWarning("Poor posture detected", "posture");
+    if (shoulderAlignment < 0.5 || spineAlignment < 0.5) {
+      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
+        this.triggerWarning("Poor posture detected", "posture");
+      } else {
+        this.state.consecutiveViolations++;
+      }
+    } else {
+      this.state.consecutiveViolations = 0;
     }
 
     this.state.lastPosePosition = pose;
@@ -247,6 +287,7 @@ export class InterviewMonitor {
       y: (leftEye.y + rightEye.y) / 2,
     };
 
+    // More lenient angle calculations
     const yaw =
       Math.atan2(nose.x - eyeMidpoint.x, eyeDistance) * (180 / Math.PI);
     const pitch =
@@ -262,7 +303,8 @@ export class InterviewMonitor {
     if (!leftShoulder || !rightShoulder) return 1;
 
     const heightDiff = Math.abs(leftShoulder.y - rightShoulder.y);
-    return Math.max(0, 1 - heightDiff / 50);
+    // More lenient shoulder alignment threshold
+    return Math.max(0, 1 - heightDiff / 100);
   }
 
   calculateSpineAlignment(keypoints) {
@@ -282,7 +324,8 @@ export class InterviewMonitor {
       totalAngle += Math.abs(angle - 180);
     }
 
-    return Math.max(0, 1 - totalAngle / 180);
+    // More lenient spine alignment threshold
+    return Math.max(0, 1 - totalAngle / 270);
   }
 
   calculateAngle(p1, p2, p3) {
@@ -320,26 +363,35 @@ export class InterviewMonitor {
   handleTabUnfocus() {
     const now = Date.now();
     if (now - this.state.lastWarningTime > this.options.maxTabUnfocusTime) {
-      this.state.violations.tabSwitching++;
-      this.triggerWarning("Tab switching detected", "tabSwitching");
+      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
+        this.state.violations.tabSwitching++;
+        this.triggerWarning("Tab switching detected", "tabSwitching");
+      } else {
+        this.state.consecutiveViolations++;
+      }
     }
     this.state.tabFocusStartTime = now;
   }
 
   handleTabFocus() {
     this.state.lastWarningTime = Date.now();
+    this.state.consecutiveViolations = 0;
   }
 
   checkTabFocus() {
     const now = Date.now();
     const unfocusedTime = now - this.state.tabFocusStartTime;
 
-    if (unfocusedTime > 5000) {
-      this.state.violations.tabSwitching++;
-      this.triggerWarning(
-        "Extended period away from interview",
-        "tabSwitching"
-      );
+    if (unfocusedTime > this.options.maxTabUnfocusTime) {
+      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
+        this.state.violations.tabSwitching++;
+        this.triggerWarning(
+          "Extended period away from interview",
+          "tabSwitching"
+        );
+      } else {
+        this.state.consecutiveViolations++;
+      }
     }
   }
 
@@ -361,6 +413,7 @@ export class InterviewMonitor {
 
     this.state.warnings.push(warning);
     this.state.lastWarningTime = now;
+    this.state.consecutiveViolations = 0;
 
     // Notify callback with remaining warnings
     if (this.callbacks.onWarning) {
