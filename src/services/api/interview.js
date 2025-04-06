@@ -3,6 +3,12 @@ import { api, APIError } from "./config";
 export const interviewApi = {
   startInterview: async (topic) => {
     try {
+      // Adjust the difficulty distribution based on topic
+      const isBasicTopic =
+        topic.toLowerCase().includes("basics") ||
+        topic.toLowerCase().includes("fundamentals") ||
+        topic.toLowerCase().includes("introduction");
+
       const response = await api.post("/interviews/start", {
         topic,
         question_types: [
@@ -12,11 +18,17 @@ export const interviewApi = {
           "experience",
           "scenario",
         ],
-        difficulty_distribution: {
-          easy: 2,
-          medium: 4,
-          hard: 2,
-        },
+        difficulty_distribution: isBasicTopic
+          ? {
+              easy: 3,
+              medium: 2,
+              hard: 0,
+            }
+          : {
+              easy: 2,
+              medium: 2,
+              hard: 1,
+            },
         categories: [
           "core_concepts",
           "best_practices",
@@ -25,6 +37,12 @@ export const interviewApi = {
           "communication",
           "teamwork",
         ],
+        // Add topic context to help generate appropriate questions
+        context: {
+          isBasicLevel: isBasicTopic,
+          topicScope: isBasicTopic ? "fundamental" : "comprehensive",
+          expectedDepth: isBasicTopic ? "basic" : "intermediate",
+        },
       });
       return response.data;
     } catch (error) {
@@ -35,10 +53,21 @@ export const interviewApi = {
 
   submitResponse: async (interviewId, response) => {
     try {
-      const result = await api.post(
-        `/feedback/${interviewId}/submit`,
-        response
+      // Add response quality check
+      const responseQuality = analyzeResponseQuality(
+        response.response.response
       );
+
+      const result = await api.post(`/feedback/${interviewId}/submit`, {
+        ...response,
+        responseQuality,
+        // Add metadata to help with scoring
+        metadata: {
+          wordCount: response.response.response.split(" ").length,
+          hasValidResponse: responseQuality.isValid,
+          isDefaultResponse: responseQuality.isDefault,
+        },
+      });
       return result.data;
     } catch (error) {
       if (error instanceof APIError) throw error;
@@ -147,5 +176,31 @@ export const interviewApi = {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to complete interview", 500);
     }
+  },
+
+  // Helper function to analyze response quality
+  analyzeResponseQuality(response) {
+    const lowQualityResponses = [
+      "i don't know",
+      "idk",
+      "not sure",
+      "no idea",
+      "skip",
+      "pass",
+      "",
+    ];
+
+    const responseText = response.toLowerCase().trim();
+
+    return {
+      isValid: !lowQualityResponses.some((phrase) =>
+        responseText.includes(phrase)
+      ),
+      isDefault: lowQualityResponses.some((phrase) =>
+        responseText.includes(phrase)
+      ),
+      wordCount: response.split(" ").length,
+      hasContent: responseText.length > 0,
+    };
   },
 };

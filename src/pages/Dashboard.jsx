@@ -152,6 +152,51 @@ const Dashboard = () => {
     }
   };
 
+  const renderFeedback = (feedback) => {
+    if (!feedback) return null;
+
+    // Convert markdown-style headers to styled elements
+    const formattedFeedback = feedback.split("\n").map((line, index) => {
+      if (line.startsWith("# ")) {
+        return (
+          <h2
+            key={index}
+            className="text-2xl font-bold text-gray-900 mb-4 mt-6"
+          >
+            {line.replace("# ", "")}
+          </h2>
+        );
+      }
+      if (line.startsWith("## ")) {
+        return (
+          <h3
+            key={index}
+            className="text-xl font-semibold text-gray-800 mb-3 mt-4"
+          >
+            {line.replace("## ", "")}
+          </h3>
+        );
+      }
+      if (line.startsWith("- ")) {
+        return (
+          <li key={index} className="ml-4 text-gray-700 mb-2">
+            {line.replace("- ", "")}
+          </li>
+        );
+      }
+      if (line.trim().length === 0) {
+        return <br key={index} />;
+      }
+      return (
+        <p key={index} className="text-gray-700 mb-2">
+          {line}
+        </p>
+      );
+    });
+
+    return <div className="prose max-w-none">{formattedFeedback}</div>;
+  };
+
   if (!user) return null;
 
   if (loading) {
@@ -240,36 +285,36 @@ const Dashboard = () => {
                 {selectedInterview.analysis_status === "completed" ? (
                   <>
                     <div className="grid grid-cols-3 gap-4">
-                      <div className="p-4 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-600">Knowledge Score</p>
-                        <p className="text-2xl font-bold text-primary">
+                      <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-sm">
+                        <p className="text-sm text-blue-600 mb-1">
+                          Knowledge Score
+                        </p>
+                        <p className="text-3xl font-bold text-blue-700">
                           {selectedInterview.knowledge_score}%
                         </p>
                       </div>
-                      <div className="p-4 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-600">
+                      <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-sm">
+                        <p className="text-sm text-green-600 mb-1">
                           Communication Score
                         </p>
-                        <p className="text-2xl font-bold text-primary">
+                        <p className="text-3xl font-bold text-green-700">
                           {selectedInterview.communication_score}%
                         </p>
                       </div>
-                      <div className="p-4 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-600">
+                      <div className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl shadow-sm">
+                        <p className="text-sm text-purple-600 mb-1">
                           Confidence Score
                         </p>
-                        <p className="text-2xl font-bold text-primary">
+                        <p className="text-3xl font-bold text-purple-700">
                           {selectedInterview.confidence_score}%
                         </p>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <h3 className="font-semibold text-gray-900">Feedback</h3>
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <p className="text-gray-700 whitespace-pre-line">
-                          {selectedInterview.feedback}
-                        </p>
-                      </div>
+                    <div className="bg-white rounded-xl shadow-sm p-6">
+                      <h3 className="text-xl font-bold mb-4">
+                        Detailed Feedback
+                      </h3>
+                      {renderFeedback(selectedInterview.feedback)}
                     </div>
                   </>
                 ) : (

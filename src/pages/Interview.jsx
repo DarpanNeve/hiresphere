@@ -30,7 +30,6 @@ const Interview = () => {
   const recognition = useRef(null);
   const webcamRef = useRef(null);
 
-  // Initialize monitoring hooks
   const bodyLanguageAnalysis = useBodyLanguageAnalysis(
     webcamRef,
     setBodyLanguageData
@@ -45,7 +44,6 @@ const Interview = () => {
       return;
     }
 
-    // Initialize speech recognition
     if (window.webkitSpeechRecognition) {
       recognition.current = new window.webkitSpeechRecognition();
       recognition.current.continuous = true;
@@ -88,12 +86,10 @@ const Interview = () => {
   async function handleInterviewTermination(reason) {
     setIsRecording(false);
 
-    // Stop all analysis
     bodyLanguageAnalysis.stopAnalysis();
     monitoring.stopMonitoring();
     stopListening();
 
-    // Only attempt to save termination if we have an active interview
     if (interviewData?.id) {
       try {
         await interviewApi.completeInterview(interviewData.id, {
@@ -105,10 +101,8 @@ const Interview = () => {
       }
     }
 
-    // Show termination message
     toast.error("Interview terminated due to violations");
 
-    // Wait a moment before redirecting
     setTimeout(() => {
       navigate("/dashboard");
     }, 3000);
@@ -130,7 +124,6 @@ const Interview = () => {
       setResponses(new Array(result.questions.length).fill(""));
       setIsRecording(true);
 
-      // Start all monitoring systems
       await monitoring.startMonitoring();
       bodyLanguageAnalysis.startAnalysis();
       startListening();
@@ -195,17 +188,13 @@ const Interview = () => {
       setLoading(true);
       stopListening();
 
-      // Stop all monitoring
       monitoring.stopMonitoring();
       bodyLanguageAnalysis.stopAnalysis();
 
-      // Save final response
       saveCurrentResponse();
 
-      // Mark interview as completed
       await interviewApi.completeInterview(interviewData.id);
 
-      // Submit all responses
       const allResponses = responses
         .map((response, index) => ({
           questionIndex: index,
@@ -217,20 +206,17 @@ const Interview = () => {
         }))
         .filter((r) => r.response.response.trim());
 
-      // Submit responses in parallel
       await Promise.all(
         allResponses.map((response) =>
           interviewApi.submitResponse(interviewData.id, response)
         )
       );
 
-      // Start analysis in background
       await interviewApi.analyzeInterview(interviewData.id);
 
       setIsRecording(false);
       setIsCompleted(true);
 
-      // Wait a moment before redirecting
       setTimeout(() => {
         navigate("/dashboard");
       }, 3000);
@@ -286,6 +272,26 @@ const Interview = () => {
           </div>
         </div>
       </div>
+    );
+  };
+
+  const renderMicrophoneButton = () => {
+    return (
+      <button
+        onClick={isListening ? stopListening : startListening}
+        className={`flex items-center justify-center p-4 rounded-full transition-all duration-300 ${
+          isListening
+            ? "bg-red-500 hover:bg-red-600"
+            : "bg-primary hover:bg-secondary"
+        }`}
+        title={isListening ? "Stop Recording" : "Start Recording"}
+      >
+        {isListening ? (
+          <FiMicOff className="h-6 w-6 text-white" />
+        ) : (
+          <FiMic className="h-6 w-6 text-white" />
+        )}
+      </button>
     );
   };
 
@@ -373,17 +379,22 @@ const Interview = () => {
 
           <div className="card">
             <h2 className="text-2xl font-bold mb-4">Your Response</h2>
-            <div className="flex items-center mb-2">
-              <div
-                className={`w-3 h-3 rounded-full mr-2 ${
-                  isListening ? "bg-red-500 animate-pulse" : "bg-gray-300"
-                }`}
-              ></div>
-              <span className="text-sm text-gray-500">
-                {isListening ? "Listening..." : "Microphone off"}
-              </span>
+            <div className="flex items-center mb-4 space-x-4">
+              {renderMicrophoneButton()}
+              <div className="flex items-center">
+                <div
+                  className={`w-3 h-3 rounded-full mr-2 ${
+                    isListening ? "bg-red-500 animate-pulse" : "bg-gray-300"
+                  }`}
+                ></div>
+                <span className="text-sm text-gray-500">
+                  {isListening ? "Listening..." : "Microphone off"}
+                </span>
+              </div>
             </div>
-            <p className="text-gray-600 min-h-[100px]">{transcript || ""}</p>
+            <p className="text-gray-600 min-h-[100px] p-4 bg-gray-50 rounded-lg">
+              {transcript || ""}
+            </p>
           </div>
           {renderConfidenceMetrics()}
         </div>
@@ -439,35 +450,18 @@ const Interview = () => {
                   {!loading && <FiArrowRight className="ml-2" />}
                 </button>
               ) : (
-                <div className="space-y-2">
-                  {isListening ? (
-                    <button
-                      onClick={stopListening}
-                      className="btn-outline w-full flex items-center justify-center"
-                    >
-                      <FiMicOff className="mr-2" /> Pause Microphone
-                    </button>
-                  ) : (
-                    <button
-                      onClick={startListening}
-                      className="btn-outline w-full flex items-center justify-center"
-                    >
-                      <FiMic className="mr-2" /> Resume Microphone
-                    </button>
-                  )}
-                  <button
-                    onClick={moveToNextQuestion}
-                    disabled={loading}
-                    className="btn-primary w-full flex items-center justify-center"
-                  >
-                    {loading
-                      ? "Processing..."
-                      : questionIndex < questions.length - 1
-                      ? "Next Question"
-                      : "Complete Interview"}
-                    {!loading && <FiArrowRight className="ml-2" />}
-                  </button>
-                </div>
+                <button
+                  onClick={moveToNextQuestion}
+                  disabled={loading}
+                  className="btn-primary w-full flex items-center justify-center"
+                >
+                  {loading
+                    ? "Processing..."
+                    : questionIndex < questions.length - 1
+                    ? "Next Question"
+                    : "Complete Interview"}
+                  {!loading && <FiArrowRight className="ml-2" />}
+                </button>
               )}
             </div>
           </div>
