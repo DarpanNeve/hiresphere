@@ -65,7 +65,7 @@ const Home = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20">
             <div className="text-center">
               <h1 className="text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-100 to-white mb-8 animate-gradient">
-                AI-Powered Interview Excellence
+                Welcome to HireSphere
               </h1>
               <p className="text-2xl text-indigo-100 max-w-3xl mx-auto mb-12 leading-relaxed">
                 Transform your hiring process with real-time AI analysis of
@@ -138,10 +138,10 @@ const Home = () => {
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1557426272-fc759fdf7a8d?ixlib=rb-1.2.1&auto=format&fit=crop&w=2100&q=80')] opacity-10 bg-cover bg-center"></div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            <StatCard value="85%" label="Faster Hiring Process" />
-            <StatCard value="95%" label="Accuracy Rate" />
-            <StatCard value="24/7" label="Available Globally" />
-            <StatCard value="50K+" label="Interviews Analyzed" />
+            <StatCard value="25+" label="Beta Users" />
+            <StatCard value="98%" label="User Satisfaction" />
+            <StatCard value="24/7" label="AI Availability" />
+            <StatCard value="100+" label="Interviews Analyzed" />
           </div>
         </div>
       </div>
@@ -189,8 +189,8 @@ const Home = () => {
               Ready to Transform Your Hiring Process?
             </h2>
             <p className="text-xl text-indigo-100 max-w-3xl mx-auto mb-8">
-              Join thousands of companies already using our AI-powered interview
-              platform
+              Join our growing community of innovative companies using
+              HireSphere
             </p>
             <button className="bg-white text-indigo-900 px-8 py-4 rounded-xl font-bold hover:bg-indigo-50 transition-colors inline-flex items-center text-lg">
               Get Started Now
@@ -206,7 +206,7 @@ const Home = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
             <div className="col-span-2">
               <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                AI Interview Tool
+                HireSphere
               </h3>
               <p className="text-gray-600 mb-6 leading-relaxed">
                 Transforming the way organizations conduct and evaluate
@@ -246,7 +246,7 @@ const Home = () => {
             </div>
           </div>
           <div className="border-t border-gray-100 mt-12 pt-8 text-center text-gray-600">
-            <p>&copy; 2024 AI Interview Tool. All rights reserved.</p>
+            <p>&copy; 2024 HireSphere. All rights reserved.</p>
           </div>
         </div>
       </footer>
