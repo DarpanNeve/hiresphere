@@ -7,7 +7,6 @@ class SpeechService {
     ) {
       throw new Error("Speech recognition is not supported in this browser");
     }
-    x;
     // Initialize speech recognition
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
