@@ -5,12 +5,14 @@ import { interviewApi } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useBodyLanguageAnalysis } from "../components/BodyLanguageAnalysis";
 import { useInterviewMonitoring } from "../services/monitoring/useInterviewMonitoring";
+import { speechService } from "../services/speech";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
-import { FiMic, FiMicOff, FiArrowRight } from "react-icons/fi";
+import { FiArrowRight } from "react-icons/fi";
+
+const ANSWER_TIME_LIMIT = 60; // seconds
 
 const Interview = () => {
-  const [isRecording, setIsRecording] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -22,13 +24,15 @@ const Interview = () => {
   const [topic, setTopic] = useState("");
   const [isCompleted, setIsCompleted] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [isListening, setIsListening] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(ANSWER_TIME_LIMIT);
+  const [isAnswering, setIsAnswering] = useState(false);
   const [bodyLanguageData, setBodyLanguageData] = useState(null);
 
   const navigate = useNavigate();
   const { user } = useAuth();
-  const recognition = useRef(null);
   const webcamRef = useRef(null);
+  const recognizerRef = useRef(null);
+  const timerRef = useRef(null);
 
   const bodyLanguageAnalysis = useBodyLanguageAnalysis(
     webcamRef,
@@ -44,39 +48,37 @@ const Interview = () => {
       return;
     }
 
-    if (window.webkitSpeechRecognition) {
-      recognition.current = new window.webkitSpeechRecognition();
-      recognition.current.continuous = true;
-      recognition.current.interimResults = true;
-
-      recognition.current.onresult = (event) => {
-        const currentTranscript = Array.from(event.results)
-          .map((result) => result[0].transcript)
-          .join("");
-        setTranscript(currentTranscript);
-      };
-
-      recognition.current.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        setError("Failed to access microphone. Please check your permissions.");
-        setIsListening(false);
-      };
-
-      recognition.current.onend = () => {
-        setIsListening(false);
-      };
-    } else {
-      setError("Speech recognition is not supported in your browser.");
-    }
-
     return () => {
-      if (recognition.current && isListening) {
-        recognition.current.stop();
+      if (recognizerRef.current) {
+        speechService.stopContinuousRecognition(recognizerRef.current);
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
       }
       monitoring.stopMonitoring();
       bodyLanguageAnalysis.stopAnalysis();
     };
   }, [user, navigate]);
+
+  useEffect(() => {
+    if (isAnswering) {
+      timerRef.current = setInterval(() => {
+        setTimeRemaining((prev) => {
+          if (prev <= 1) {
+            moveToNextQuestion();
+            return ANSWER_TIME_LIMIT;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+        }
+      };
+    }
+  }, [isAnswering]);
 
   const handleWebcamError = (err) => {
     console.error("Webcam error:", err);
@@ -84,11 +86,12 @@ const Interview = () => {
   };
 
   async function handleInterviewTermination(reason) {
-    setIsRecording(false);
+    if (recognizerRef.current) {
+      speechService.stopContinuousRecognition(recognizerRef.current);
+    }
 
     bodyLanguageAnalysis.stopAnalysis();
     monitoring.stopMonitoring();
-    stopListening();
 
     if (interviewData?.id) {
       try {
@@ -122,34 +125,37 @@ const Interview = () => {
       setQuestions(result.questions);
       setCurrentQuestion(result.questions[0]);
       setResponses(new Array(result.questions.length).fill(""));
-      setIsRecording(true);
 
       await monitoring.startMonitoring();
       bodyLanguageAnalysis.startAnalysis();
-      startListening();
+
+      // Start speech recognition
+      recognizerRef.current = speechService.startContinuousRecognition(
+        (interimText) => {
+          setTranscript((prev) => prev + " " + interimText);
+        },
+        (finalText) => {
+          setTranscript((prev) => prev + " " + finalText);
+        }
+      );
+
+      // Read first question
+      await readQuestion(result.questions[0]);
+      setIsAnswering(true);
+
+      setLoading(false);
     } catch (err) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
 
-  const startListening = () => {
-    if (recognition.current && !isListening) {
-      try {
-        recognition.current.start();
-        setIsListening(true);
-        setTranscript("");
-      } catch (error) {
-        console.error("Failed to start recognition:", error);
-      }
-    }
-  };
-
-  const stopListening = () => {
-    if (recognition.current && isListening) {
-      recognition.current.stop();
-      setIsListening(false);
+  const readQuestion = async (question) => {
+    try {
+      await speechService.speakText(question);
+    } catch (error) {
+      console.error("Failed to read question:", error);
+      toast.error("Failed to read question");
     }
   };
 
@@ -166,18 +172,24 @@ const Interview = () => {
     }
   };
 
-  const moveToNextQuestion = () => {
+  const moveToNextQuestion = async () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    setIsAnswering(false);
+    setTimeRemaining(ANSWER_TIME_LIMIT);
+
     saveCurrentResponse();
-    stopListening();
 
     if (questionIndex < questions.length - 1) {
       setQuestionIndex((prev) => prev + 1);
-      setCurrentQuestion(questions[questionIndex + 1]);
+      const nextQuestion = questions[questionIndex + 1];
+      setCurrentQuestion(nextQuestion);
       setTranscript("");
 
-      setTimeout(() => {
-        startListening();
-      }, 500);
+      // Read next question before starting timer
+      await readQuestion(nextQuestion);
+      setIsAnswering(true);
     } else {
       completeInterview();
     }
@@ -186,7 +198,10 @@ const Interview = () => {
   const completeInterview = async () => {
     try {
       setLoading(true);
-      stopListening();
+
+      if (recognizerRef.current) {
+        speechService.stopContinuousRecognition(recognizerRef.current);
+      }
 
       monitoring.stopMonitoring();
       bodyLanguageAnalysis.stopAnalysis();
@@ -214,7 +229,6 @@ const Interview = () => {
 
       await interviewApi.analyzeInterview(interviewData.id);
 
-      setIsRecording(false);
       setIsCompleted(true);
 
       setTimeout(() => {
@@ -227,72 +241,10 @@ const Interview = () => {
     }
   };
 
-  const renderConfidenceMetrics = () => {
-    if (!bodyLanguageData?.confidence) return null;
-
-    const { overall, breakdown } = bodyLanguageData.confidence;
-
-    return (
-      <div className="card mt-4">
-        <h3 className="text-lg font-semibold mb-2">
-          Real-time Confidence Analysis
-        </h3>
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <span>Overall Confidence:</span>
-            <span className="font-semibold">{overall}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className="bg-primary rounded-full h-2 transition-all duration-500"
-              style={{ width: `${overall}%` }}
-            ></div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            <div className="text-sm">
-              <span>Eye Contact: </span>
-              <span
-                className={
-                  breakdown.eyeContact ? "text-green-500" : "text-red-500"
-                }
-              >
-                {breakdown.eyeContact ? "Good" : "Needs Improvement"}
-              </span>
-            </div>
-            <div className="text-sm">
-              <span>Posture: </span>
-              <span
-                className={
-                  breakdown.posture > 0.7 ? "text-green-500" : "text-red-500"
-                }
-              >
-                {breakdown.posture > 0.7 ? "Good" : "Needs Improvement"}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderMicrophoneButton = () => {
-    return (
-      <button
-        onClick={isListening ? stopListening : startListening}
-        className={`flex items-center justify-center p-4 rounded-full transition-all duration-300 ${
-          isListening
-            ? "bg-red-500 hover:bg-red-600"
-            : "bg-primary hover:bg-secondary"
-        }`}
-        title={isListening ? "Stop Recording" : "Start Recording"}
-      >
-        {isListening ? (
-          <FiMicOff className="h-6 w-6 text-white" />
-        ) : (
-          <FiMic className="h-6 w-6 text-white" />
-        )}
-      </button>
-    );
+  const formatTime = (seconds) => {
+    return `${Math.floor(seconds / 60)}:${(seconds % 60)
+      .toString()
+      .padStart(2, "0")}`;
   };
 
   if (!user) return null;
@@ -379,29 +331,47 @@ const Interview = () => {
 
           <div className="card">
             <h2 className="text-2xl font-bold mb-4">Your Response</h2>
-            <div className="flex items-center mb-4 space-x-4">
-              {renderMicrophoneButton()}
-              <div className="flex items-center">
-                <div
-                  className={`w-3 h-3 rounded-full mr-2 ${
-                    isListening ? "bg-red-500 animate-pulse" : "bg-gray-300"
-                  }`}
-                ></div>
-                <span className="text-sm text-gray-500">
-                  {isListening ? "Listening..." : "Microphone off"}
-                </span>
+            {isAnswering && (
+              <div className="mb-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-500">Time Remaining</span>
+                  <span
+                    className={`font-mono ${
+                      timeRemaining <= 10 ? "text-red-500" : "text-gray-700"
+                    }`}
+                  >
+                    {formatTime(timeRemaining)}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all duration-1000"
+                    style={{
+                      width: `${(timeRemaining / ANSWER_TIME_LIMIT) * 100}%`,
+                    }}
+                  ></div>
+                </div>
               </div>
+            )}
+            <div className="relative">
+              <div className="absolute top-2 right-2">
+                {isAnswering && (
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></div>
+                    <span className="text-sm text-gray-500">Recording</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-gray-600 min-h-[100px] p-4 bg-gray-50 rounded-lg">
+                {transcript || "Your response will appear here..."}
+              </p>
             </div>
-            <p className="text-gray-600 min-h-[100px] p-4 bg-gray-50 rounded-lg">
-              {transcript || ""}
-            </p>
           </div>
-          {renderConfidenceMetrics()}
         </div>
         <div className="space-y-4">
           <div className="card">
             <h2 className="text-2xl font-bold mb-4">Interview Setup</h2>
-            {!isRecording && (
+            {!currentQuestion && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Interview Topic
@@ -440,7 +410,7 @@ const Interview = () => {
             )}
 
             <div className="space-y-4 mt-6">
-              {!isRecording ? (
+              {!currentQuestion ? (
                 <button
                   onClick={startInterview}
                   disabled={loading}
@@ -452,7 +422,7 @@ const Interview = () => {
               ) : (
                 <button
                   onClick={moveToNextQuestion}
-                  disabled={loading}
+                  disabled={loading || !isAnswering}
                   className="btn-primary w-full flex items-center justify-center"
                 >
                   {loading
