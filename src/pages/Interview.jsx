@@ -48,15 +48,13 @@ const Interview = () => {
       return;
     }
 
+    // Disable Picture-in-Picture
+    if (webcamRef.current?.video) {
+      webcamRef.current.video.disablePictureInPicture = true;
+    }
+
     return () => {
-      if (recognizerRef.current) {
-        speechService.stopContinuousRecognition(recognizerRef.current);
-      }
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      monitoring.stopMonitoring();
-      bodyLanguageAnalysis.stopAnalysis();
+      cleanup();
     };
   }, [user, navigate]);
 
@@ -80,18 +78,24 @@ const Interview = () => {
     }
   }, [isAnswering]);
 
+  const cleanup = () => {
+    if (recognizerRef.current) {
+      speechService.stopContinuousRecognition(recognizerRef.current);
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    monitoring.stopMonitoring();
+    bodyLanguageAnalysis.stopAnalysis();
+  };
+
   const handleWebcamError = (err) => {
     console.error("Webcam error:", err);
     setMediaError("Failed to access camera. Please check your permissions.");
   };
 
   async function handleInterviewTermination(reason) {
-    if (recognizerRef.current) {
-      speechService.stopContinuousRecognition(recognizerRef.current);
-    }
-
-    bodyLanguageAnalysis.stopAnalysis();
-    monitoring.stopMonitoring();
+    cleanup();
 
     if (interviewData?.id) {
       try {
@@ -118,25 +122,32 @@ const Interview = () => {
       setInterviewData(result.interview);
       setQuestions(result.questions);
       setCurrentQuestion(result.questions[0]);
-      setResponses(new Array(result.questions.length).fill(""));
+      setResponses(new Array(result.questions.length).fill(null));
 
       await monitoring.startMonitoring();
       bodyLanguageAnalysis.startAnalysis();
 
-      // Start speech recognition
-      recognizerRef.current = speechService.startContinuousRecognition(
-        (interimText) => {
-          setTranscript((prev) => prev + " " + interimText);
-        },
-        (finalText) => {
-          setTranscript((prev) => prev + " " + finalText);
-        }
-      );
+      // Wait for a moment before starting speech recognition
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Read first question
       await readQuestion(result.questions[0]);
-      setIsAnswering(true);
 
+      // Start speech recognition after question is read
+      recognizerRef.current = speechService.startContinuousRecognition(
+        (interimText) => {
+          if (!speechService.isCurrentlySpeaking()) {
+            setTranscript((prev) => prev + " " + interimText);
+          }
+        },
+        (finalText) => {
+          if (!speechService.isCurrentlySpeaking()) {
+            setTranscript((prev) => prev + " " + finalText);
+          }
+        }
+      );
+
+      setIsAnswering(true);
       setLoading(false);
     } catch (err) {
       setError(err.message);
@@ -146,15 +157,39 @@ const Interview = () => {
 
   const readQuestion = async (question) => {
     try {
+      // Temporarily pause speech recognition
+      if (recognizerRef.current) {
+        speechService.stopContinuousRecognition(recognizerRef.current);
+      }
+
       await speechService.speakText(question);
+
+      // Resume speech recognition after question is read
+      if (!isCompleted) {
+        recognizerRef.current = speechService.startContinuousRecognition(
+          (interimText) => {
+            if (!speechService.isCurrentlySpeaking()) {
+              setTranscript((prev) => prev + " " + interimText);
+            }
+          },
+          (finalText) => {
+            if (!speechService.isCurrentlySpeaking()) {
+              setTranscript((prev) => prev + " " + finalText);
+            }
+          }
+        );
+      }
     } catch (error) {
       console.error("Failed to read question:", error);
       toast.error("Failed to read question");
     }
   };
 
-  const saveCurrentResponse = () => {
-    if (transcript.trim()) {
+  const saveCurrentResponse = async () => {
+    if (!transcript.trim()) return;
+
+    try {
+      // Save to local state
       setResponses((prev) => {
         const newResponses = [...prev];
         newResponses[questionIndex] = {
@@ -164,20 +199,19 @@ const Interview = () => {
         return newResponses;
       });
 
-      // Submit response immediately
+      // Submit to backend
       if (interviewData?.id) {
-        interviewApi
-          .submitResponse(interviewData.id, {
-            questionIndex,
-            response: {
-              question: currentQuestion,
-              response: transcript.trim(),
-            },
-          })
-          .catch((error) => {
-            console.error("Failed to submit response:", error);
-          });
+        await interviewApi.submitResponse(interviewData.id, {
+          questionIndex,
+          response: {
+            question: currentQuestion,
+            response: transcript.trim(),
+          },
+        });
       }
+    } catch (error) {
+      console.error("Failed to save response:", error);
+      toast.error("Failed to save response");
     }
   };
 
@@ -188,7 +222,7 @@ const Interview = () => {
     setIsAnswering(false);
     setTimeRemaining(ANSWER_TIME_LIMIT);
 
-    saveCurrentResponse();
+    await saveCurrentResponse();
 
     if (questionIndex < questions.length - 1) {
       setQuestionIndex((prev) => prev + 1);
@@ -207,18 +241,14 @@ const Interview = () => {
   const completeInterview = async () => {
     try {
       setLoading(true);
+      cleanup();
 
-      if (recognizerRef.current) {
-        speechService.stopContinuousRecognition(recognizerRef.current);
+      await saveCurrentResponse();
+
+      if (interviewData?.id) {
+        await interviewApi.completeInterview(interviewData.id);
+        await interviewApi.analyzeInterview(interviewData.id);
       }
-
-      monitoring.stopMonitoring();
-      bodyLanguageAnalysis.stopAnalysis();
-
-      saveCurrentResponse();
-
-      await interviewApi.completeInterview(interviewData.id);
-      await interviewApi.analyzeInterview(interviewData.id);
 
       setIsCompleted(true);
       toast.success("Interview completed successfully!");
@@ -330,7 +360,7 @@ const Interview = () => {
                   <span className="text-sm text-gray-500">Time Remaining</span>
                   <span
                     className={`font-mono ${
-                      timeRemaining <= 10 ? "text-red-500" : "text-gray-700"
+                      timeRemaining <= 30 ? "text-red-500" : "text-gray-700"
                     }`}
                   >
                     {formatTime(timeRemaining)}

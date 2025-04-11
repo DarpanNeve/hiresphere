@@ -7,6 +7,7 @@ class SpeechService {
     ) {
       throw new Error("Speech recognition is not supported in this browser");
     }
+
     // Initialize speech recognition
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -18,6 +19,9 @@ class SpeechService {
     // Initialize speech synthesis
     this.synthesis = window.speechSynthesis;
     this.voices = [];
+
+    // Track speaking state
+    this.isSpeaking = false;
 
     // Load voices when they're available
     if (this.synthesis.onvoiceschanged !== undefined) {
@@ -32,6 +36,7 @@ class SpeechService {
       try {
         // Cancel any ongoing speech
         this.synthesis.cancel();
+        this.isSpeaking = true;
 
         const utterance = new SpeechSynthesisUtterance(text);
 
@@ -43,11 +48,8 @@ class SpeechService {
         const preferredVoice =
           this.voices.find(
             (voice) =>
-              voice.lang.includes("en") && voice.name.includes("Google") // Prefer Google voices
-          ) ||
-          this.voices.find(
-            (voice) => voice.lang.includes("en") // Fallback to any English voice
-          );
+              voice.lang.includes("en") && voice.name.includes("Google")
+          ) || this.voices.find((voice) => voice.lang.includes("en"));
 
         if (preferredVoice) {
           utterance.voice = preferredVoice;
@@ -57,11 +59,19 @@ class SpeechService {
         utterance.pitch = 1;
         utterance.volume = 1;
 
-        utterance.onend = () => resolve();
-        utterance.onerror = (error) => reject(error);
+        utterance.onend = () => {
+          this.isSpeaking = false;
+          resolve();
+        };
+
+        utterance.onerror = (error) => {
+          this.isSpeaking = false;
+          reject(error);
+        };
 
         this.synthesis.speak(utterance);
       } catch (error) {
+        this.isSpeaking = false;
         reject(error);
       }
     });
@@ -71,7 +81,14 @@ class SpeechService {
     // Reset recognition instance
     this.recognition.abort();
 
+    let finalTranscriptBuffer = "";
+    let lastInterimTimestamp = Date.now();
+    const INTERIM_BUFFER_TIME = 1000; // 1 second buffer for interim results
+
     this.recognition.onresult = (event) => {
+      // Don't process results if we're speaking
+      if (this.isSpeaking) return;
+
       let interimTranscript = "";
       let finalTranscript = "";
 
@@ -79,14 +96,23 @@ class SpeechService {
         const transcript = event.results[i][0].transcript;
 
         if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-          if (onFinalResult) {
-            onFinalResult(transcript);
+          // Check if this final result is different from the buffer
+          if (transcript.trim() !== finalTranscriptBuffer.trim()) {
+            finalTranscript += transcript;
+            finalTranscriptBuffer = transcript;
+            if (onFinalResult) {
+              onFinalResult(transcript);
+            }
           }
         } else {
-          interimTranscript += transcript;
-          if (onInterimResult) {
-            onInterimResult(transcript);
+          const now = Date.now();
+          // Only process interim results if enough time has passed
+          if (now - lastInterimTimestamp > INTERIM_BUFFER_TIME) {
+            interimTranscript += transcript;
+            if (onInterimResult) {
+              onInterimResult(transcript);
+            }
+            lastInterimTimestamp = now;
           }
         }
       }
@@ -98,14 +124,16 @@ class SpeechService {
       // Attempt to restart recognition on error
       if (event.error !== "aborted") {
         setTimeout(() => {
-          this.startContinuousRecognition(onInterimResult, onFinalResult);
+          if (this.isRecognizing && !this.isSpeaking) {
+            this.startContinuousRecognition(onInterimResult, onFinalResult);
+          }
         }, 1000);
       }
     };
 
     this.recognition.onend = () => {
       // Automatically restart if recognition ends unexpectedly
-      if (this.isRecognizing) {
+      if (this.isRecognizing && !this.isSpeaking) {
         this.recognition.start();
       }
     };
@@ -125,6 +153,10 @@ class SpeechService {
       this.isRecognizing = false;
       recognizer.abort();
     }
+  }
+
+  isCurrentlySpeaking() {
+    return this.isSpeaking;
   }
 }
 
