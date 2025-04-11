@@ -353,9 +353,14 @@ export class InterviewMonitor {
 
   handleBeforeUnload = (event) => {
     if (this.state.isMonitoring) {
+      // Prevent Picture-in-Picture mode
+      const videos = document.getElementsByTagName('video');
+      for (const video of videos) {
+        video.disablePictureInPicture = true;
+      }
+      
       event.preventDefault();
-      event.returnValue =
-        "Are you sure you want to leave? This will terminate your interview.";
+      event.returnValue = "Are you sure you want to leave? This will terminate your interview.";
       return event.returnValue;
     }
   };

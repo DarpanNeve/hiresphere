@@ -3,14 +3,11 @@ import { api, APIError } from "./config";
 export const interviewApi = {
   startInterview: async (topic) => {
     try {
-      // Adjust the difficulty distribution based on topic
-      const isBasicTopic =
-        topic.toLowerCase().includes("basics") ||
-        topic.toLowerCase().includes("fundamentals") ||
-        topic.toLowerCase().includes("introduction");
+      // Clean up the topic string
+      const cleanTopic = topic.trim();
 
       const response = await api.post("/interviews/start", {
-        topic,
+        topic: cleanTopic,
         question_types: [
           "technical",
           "behavioral",
@@ -18,17 +15,11 @@ export const interviewApi = {
           "experience",
           "scenario",
         ],
-        difficulty_distribution: isBasicTopic
-          ? {
-              easy: 3,
-              medium: 2,
-              hard: 0,
-            }
-          : {
-              easy: 2,
-              medium: 2,
-              hard: 1,
-            },
+        difficulty_distribution: {
+          easy: 2,
+          medium: 2,
+          hard: 1,
+        },
         categories: [
           "core_concepts",
           "best_practices",
@@ -37,14 +28,17 @@ export const interviewApi = {
           "communication",
           "teamwork",
         ],
-        // Add topic context to help generate appropriate questions
-        context: {
-          isBasicLevel: isBasicTopic,
-          topicScope: isBasicTopic ? "fundamental" : "comprehensive",
-          expectedDepth: isBasicTopic ? "basic" : "intermediate",
-        },
       });
-      return response.data;
+
+      // Clean up questions before returning
+      const cleanedQuestions = response.data.questions.map((q) =>
+        typeof q === "string" ? q.replace(/["']/g, "").trim() : q
+      );
+
+      return {
+        interview: response.data.interview,
+        questions: cleanedQuestions,
+      };
     } catch (error) {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to start interview", 500);
@@ -53,21 +47,19 @@ export const interviewApi = {
 
   submitResponse: async (interviewId, response) => {
     try {
-      // Add response quality check
-      const responseQuality = analyzeResponseQuality(
-        response.response.response
-      );
-
-      const result = await api.post(`/feedback/${interviewId}/submit`, {
+      // Clean up response text
+      const cleanResponse = {
         ...response,
-        responseQuality,
-        // Add metadata to help with scoring
-        metadata: {
-          wordCount: response.response.response.split(" ").length,
-          hasValidResponse: responseQuality.isValid,
-          isDefaultResponse: responseQuality.isDefault,
+        response: {
+          ...response.response,
+          response: response.response.response.trim(),
         },
-      });
+      };
+
+      const result = await api.post(
+        `/feedback/${interviewId}/submit`,
+        cleanResponse
+      );
       return result.data;
     } catch (error) {
       if (error instanceof APIError) throw error;
@@ -148,10 +140,19 @@ export const interviewApi = {
   startPublicInterview: async (token, candidateInfo) => {
     try {
       const response = await api.post(`/public/interview/${token}/start/`, {
-        name: candidateInfo.name,
-        email: candidateInfo.email,
+        name: candidateInfo.name.trim(),
+        email: candidateInfo.email.trim(),
       });
-      return response.data;
+
+      // Clean up questions
+      const cleanedQuestions = response.data.questions.map((q) =>
+        typeof q === "string" ? q.replace(/["']/g, "").trim() : q
+      );
+
+      return {
+        ...response.data,
+        questions: cleanedQuestions,
+      };
     } catch (error) {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to start interview", 500);
@@ -160,47 +161,24 @@ export const interviewApi = {
 
   completePublicInterview: async (token, data) => {
     try {
+      // Clean up responses
+      const cleanedResponses = data.responses.map((response) => ({
+        question: response.question.replace(/["']/g, "").trim(),
+        response: response.response.trim(),
+        questionIndex: response.questionIndex,
+      }));
+
       const response = await api.post(`/public/interview/${token}/complete/`, {
         candidateInfo: {
-          name: data.candidateInfo.name,
-          email: data.candidateInfo.email,
+          name: data.candidateInfo.name.trim(),
+          email: data.candidateInfo.email.trim(),
         },
-        responses: data.responses.map((response, index) => ({
-          question: response.question,
-          response: response.response,
-          questionIndex: index,
-        })),
+        responses: cleanedResponses,
       });
       return response.data;
     } catch (error) {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to complete interview", 500);
     }
-  },
-
-  // Helper function to analyze response quality
-  analyzeResponseQuality(response) {
-    const lowQualityResponses = [
-      "i don't know",
-      "idk",
-      "not sure",
-      "no idea",
-      "skip",
-      "pass",
-      "",
-    ];
-
-    const responseText = response.toLowerCase().trim();
-
-    return {
-      isValid: !lowQualityResponses.some((phrase) =>
-        responseText.includes(phrase)
-      ),
-      isDefault: lowQualityResponses.some((phrase) =>
-        responseText.includes(phrase)
-      ),
-      wordCount: response.split(" ").length,
-      hasContent: responseText.length > 0,
-    };
   },
 };

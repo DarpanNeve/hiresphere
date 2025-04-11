@@ -95,20 +95,14 @@ const Interview = () => {
 
     if (interviewData?.id) {
       try {
-        await interviewApi.completeInterview(interviewData.id, {
-          status: "terminated",
-          termination_reason: reason,
-        });
+        await interviewApi.completeInterview(interviewData.id);
       } catch (error) {
         console.error("Failed to save interview termination:", error);
       }
     }
 
     toast.error("Interview terminated due to violations");
-
-    setTimeout(() => {
-      navigate("/dashboard");
-    }, 3000);
+    navigate("/dashboard");
   }
 
   const startInterview = async () => {
@@ -169,6 +163,21 @@ const Interview = () => {
         };
         return newResponses;
       });
+
+      // Submit response immediately
+      if (interviewData?.id) {
+        interviewApi
+          .submitResponse(interviewData.id, {
+            questionIndex,
+            response: {
+              question: currentQuestion,
+              response: transcript.trim(),
+            },
+          })
+          .catch((error) => {
+            console.error("Failed to submit response:", error);
+          });
+      }
     }
   };
 
@@ -209,33 +218,17 @@ const Interview = () => {
       saveCurrentResponse();
 
       await interviewApi.completeInterview(interviewData.id);
-
-      const allResponses = responses
-        .map((response, index) => ({
-          questionIndex: index,
-          response: {
-            question: questions[index],
-            response: response.response || transcript,
-            bodyLanguage: response.bodyLanguage,
-          },
-        }))
-        .filter((r) => r.response.response.trim());
-
-      await Promise.all(
-        allResponses.map((response) =>
-          interviewApi.submitResponse(interviewData.id, response)
-        )
-      );
-
       await interviewApi.analyzeInterview(interviewData.id);
 
       setIsCompleted(true);
+      toast.success("Interview completed successfully!");
 
       setTimeout(() => {
         navigate("/dashboard");
       }, 3000);
     } catch (err) {
       setError(err.message);
+      toast.error("Failed to complete interview");
     } finally {
       setLoading(false);
     }
