@@ -1,4 +1,3 @@
-// Web Speech API wrapper for speech recognition and synthesis
 class SpeechService {
   constructor() {
     if (
@@ -8,7 +7,6 @@ class SpeechService {
       throw new Error("Speech recognition is not supported in this browser");
     }
 
-    // Initialize speech recognition
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     this.recognition = new SpeechRecognition();
@@ -16,19 +14,24 @@ class SpeechService {
     this.recognition.interimResults = true;
     this.recognition.lang = "en-US";
 
-    // Initialize speech synthesis
     this.synthesis = window.speechSynthesis;
     this.voices = [];
-
-    // Track speaking state
     this.isSpeaking = false;
 
-    // Load voices when they're available
+    // Pre-load voices
+    this.loadVoices();
     if (this.synthesis.onvoiceschanged !== undefined) {
-      this.synthesis.onvoiceschanged = () => {
-        this.voices = this.synthesis.getVoices();
-      };
+      this.synthesis.onvoiceschanged = () => this.loadVoices();
     }
+  }
+
+  loadVoices() {
+    this.voices = this.synthesis.getVoices();
+    // Pre-select preferred voice
+    this.preferredVoice =
+      this.voices.find(
+        (voice) => voice.lang.includes("en") && voice.name.includes("Google")
+      ) || this.voices.find((voice) => voice.lang.includes("en"));
   }
 
   async speakText(text) {
@@ -40,28 +43,19 @@ class SpeechService {
 
         const utterance = new SpeechSynthesisUtterance(text);
 
-        // Select a natural-sounding English voice
-        if (!this.voices.length) {
-          this.voices = this.synthesis.getVoices();
+        if (this.preferredVoice) {
+          utterance.voice = this.preferredVoice;
         }
 
-        const preferredVoice =
-          this.voices.find(
-            (voice) =>
-              voice.lang.includes("en") && voice.name.includes("Google")
-          ) || this.voices.find((voice) => voice.lang.includes("en"));
-
-        if (preferredVoice) {
-          utterance.voice = preferredVoice;
-        }
-
-        utterance.rate = 1;
+        // Optimize speech parameters
+        utterance.rate = 1.1; // Slightly faster
         utterance.pitch = 1;
         utterance.volume = 1;
 
         utterance.onend = () => {
           this.isSpeaking = false;
-          resolve();
+          // Add small delay before resolving
+          setTimeout(resolve, 300);
         };
 
         utterance.onerror = (error) => {
@@ -83,10 +77,9 @@ class SpeechService {
 
     let finalTranscriptBuffer = "";
     let lastInterimTimestamp = Date.now();
-    const INTERIM_BUFFER_TIME = 1000; // 1 second buffer for interim results
+    const INTERIM_BUFFER_TIME = 500; // Reduced buffer time
 
     this.recognition.onresult = (event) => {
-      // Don't process results if we're speaking
       if (this.isSpeaking) return;
 
       let interimTranscript = "";
@@ -96,7 +89,6 @@ class SpeechService {
         const transcript = event.results[i][0].transcript;
 
         if (event.results[i].isFinal) {
-          // Check if this final result is different from the buffer
           if (transcript.trim() !== finalTranscriptBuffer.trim()) {
             finalTranscript += transcript;
             finalTranscriptBuffer = transcript;
@@ -106,7 +98,6 @@ class SpeechService {
           }
         } else {
           const now = Date.now();
-          // Only process interim results if enough time has passed
           if (now - lastInterimTimestamp > INTERIM_BUFFER_TIME) {
             interimTranscript += transcript;
             if (onInterimResult) {
@@ -121,18 +112,16 @@ class SpeechService {
     this.recognition.onerror = (event) => {
       console.error("Speech recognition error:", event.error);
 
-      // Attempt to restart recognition on error
       if (event.error !== "aborted") {
         setTimeout(() => {
           if (this.isRecognizing && !this.isSpeaking) {
             this.startContinuousRecognition(onInterimResult, onFinalResult);
           }
-        }, 1000);
+        }, 500); // Reduced retry delay
       }
     };
 
     this.recognition.onend = () => {
-      // Automatically restart if recognition ends unexpectedly
       if (this.isRecognizing && !this.isSpeaking) {
         this.recognition.start();
       }

@@ -8,14 +8,15 @@ import { useInterviewMonitoring } from "../services/monitoring/useInterviewMonit
 import { speechService } from "../services/speech";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
-import { FiArrowRight } from "react-icons/fi";
+import { FiArrowRight, FiLoader } from "react-icons/fi";
 
-const ANSWER_TIME_LIMIT = 60; // seconds
+const ANSWER_TIME_LIMIT = 60;
 
 const Interview = () => {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [modelLoading, setModelLoading] = useState(true);
   const [error, setError] = useState("");
   const [interviewData, setInterviewData] = useState(null);
   const [mediaError, setMediaError] = useState(null);
@@ -48,7 +49,9 @@ const Interview = () => {
       return;
     }
 
-    // Disable Picture-in-Picture
+    // Initialize models
+    initializeModels();
+
     if (webcamRef.current?.video) {
       webcamRef.current.video.disablePictureInPicture = true;
     }
@@ -57,6 +60,24 @@ const Interview = () => {
       cleanup();
     };
   }, [user, navigate]);
+
+  const initializeModels = async () => {
+    setModelLoading(true);
+    try {
+      // Initialize monitoring and body language analysis
+      await Promise.all([
+        monitoring.startMonitoring(),
+        bodyLanguageAnalysis.startAnalysis(),
+      ]);
+      setModelLoading(false);
+    } catch (error) {
+      console.error("Failed to initialize models:", error);
+      setError(
+        "Failed to initialize interview systems. Please refresh and try again."
+      );
+      setModelLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isAnswering) {
@@ -115,6 +136,11 @@ const Interview = () => {
       return;
     }
 
+    if (modelLoading) {
+      setError("Please wait for the interview systems to initialize");
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
@@ -123,9 +149,6 @@ const Interview = () => {
       setQuestions(result.questions);
       setCurrentQuestion(result.questions[0]);
       setResponses(new Array(result.questions.length).fill(null));
-
-      await monitoring.startMonitoring();
-      bodyLanguageAnalysis.startAnalysis();
 
       // Wait for a moment before starting speech recognition
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -157,14 +180,12 @@ const Interview = () => {
 
   const readQuestion = async (question) => {
     try {
-      // Temporarily pause speech recognition
       if (recognizerRef.current) {
         speechService.stopContinuousRecognition(recognizerRef.current);
       }
 
       await speechService.speakText(question);
 
-      // Resume speech recognition after question is read
       if (!isCompleted) {
         recognizerRef.current = speechService.startContinuousRecognition(
           (interimText) => {
@@ -316,6 +337,19 @@ const Interview = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <Toaster position="top-right" />
+
+      {modelLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 text-center">
+            <FiLoader className="animate-spin h-8 w-8 mx-auto mb-4 text-primary" />
+            <p className="text-lg font-semibold">
+              Initializing Interview Systems
+            </p>
+            <p className="text-gray-600 mt-2">Please wait...</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-8">
         <div className="space-y-4">
           <div className="card">
