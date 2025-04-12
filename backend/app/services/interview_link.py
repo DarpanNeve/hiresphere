@@ -35,7 +35,7 @@ async def create_interview_link(link_in: InterviewLinkCreate, hr_id: str):
         link_data["_id"] = result.inserted_id
 
         # Add URL to response
-        link_data["url"] = f"https://ai-interviewer.com/i/{token}"
+        link_data["url"] = f"https://hiresphere-pi.vercel.app/i/{token}"
         link_data["is_expired"] = False
 
         # Send email to candidate
@@ -62,7 +62,7 @@ async def get_interview_links(hr_id: str):
             doc["id"] = str(doc["_id"])  # Add string ID for API response
             doc["_id"] = str(doc["_id"])
             doc["hr_id"] = str(doc["hr_id"])
-            doc["url"] = f"https://ai-interviewer.com/i/{doc['token']}"
+            doc["url"] = f"https://hiresphere-pi.vercel.app/i/{doc['token']}"
             doc["is_expired"] = doc["expires_at"] < now
             links.append(doc)
 
@@ -76,7 +76,7 @@ async def get_interview_link(link_id: str):
         link = await db.database.interview_links.find_one({"_id": ObjectId(link_id)})
         if link:
             link["id"] = str(link["_id"])
-            link["url"] = f"https://ai-interviewer.com/i/{link['token']}"
+            link["url"] = f"https://hiresphere-pi.vercel.app/i/{link['token']}"
             link["is_expired"] = link["expires_at"] < datetime.utcnow()
         return link
     except Exception as e:

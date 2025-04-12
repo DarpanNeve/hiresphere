@@ -68,5 +68,5 @@ class InterviewLink:
     def is_expired(self) -> bool:
         return datetime.utcnow() > self.expires_at
 
-    def get_url(self, base_url: str = "https://ai-interviewer.com") -> str:
+    def get_url(self, base_url: str = "https://hiresphere-pi.vercel.app/") -> str:
         return f"{base_url}/i/{self.token}"
