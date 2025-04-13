@@ -54,8 +54,8 @@ function App() {
           </Route>
         </Route>
 
-        {/* Public interview link (no layout) */}
-        <Route path="/i/:linkId" element={<PublicInterview />} />
+        {/* Public interview route (no layout) */}
+        <Route path="/interview/:token" element={<PublicInterview />} />
       </Routes>
     </ErrorBoundary>
   );

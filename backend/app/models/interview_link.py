@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from bson import ObjectId
 import secrets
+from app.core.config import settings
 
 class InterviewLink:
     def __init__(
@@ -68,5 +69,7 @@ class InterviewLink:
     def is_expired(self) -> bool:
         return datetime.utcnow() > self.expires_at
 
-    def get_url(self, base_url: str = "https://hiresphere-pi.vercel.app/") -> str:
-        return f"{base_url}/i/{self.token}"
+    def get_url(self) -> str:
+        # Use the configured frontend URL from settings
+        base_url = settings.FRONTEND_URL.rstrip('/')
+        return f"{base_url}/interview/{self.token}"

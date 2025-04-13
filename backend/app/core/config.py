@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings
 import os
 
-
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Interviewer"
     API_V1_STR: str = "/api"
@@ -14,6 +13,9 @@ class Settings(BaseSettings):
     DID_API_KEY: str = ""
     MONGODB_URL: str = "mongodb://localhost:27017"
     DATABASE_NAME: str = "ai_interviewer"
+
+    # Frontend URL for interview links
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://hiresphere-pi.vercel.app")
 
     # MongoDB Connection Pool Settings
     MONGODB_MIN_POOL_SIZE: int = 10
@@ -55,9 +57,8 @@ class Settings(BaseSettings):
 
     # Security headers
     SECURITY_HEADERS: bool = os.getenv("SECURITY_HEADERS", "True").lower() == "true"
-
+    
     class Config:
         env_file = ".env"
-
 
 settings = Settings()
