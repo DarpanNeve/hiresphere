@@ -2,8 +2,10 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
+  // Load environment variables prefixed with VITE_
   const env = loadEnv(mode, process.cwd(), "VITE_");
 
+  // Determine the proxy target based on VITE_ENVIRONMENT
   const target =
     env.VITE_ENVIRONMENT === "staging"
       ? "http://localhost:8000/api"
@@ -34,6 +36,7 @@ export default defineConfig(({ mode }) => {
                 req.method,
                 req.url
               );
+              // Add origin header to the proxy request
               proxyReq.setHeader(
                 "origin",
                 "https://hiresphere-eita.onrender.com"
@@ -51,18 +54,9 @@ export default defineConfig(({ mode }) => {
       },
       cors: true,
     },
+    // Define a global constant __API_URL__ for use in your client code
     define: {
       __API_URL__: JSON.stringify(target),
     },
-    // Add this section to handle client-side routing
-    preview: {
-      port: 5173,
-    },
-    build: {
-      outDir: "dist",
-      assetsDir: "assets",
-    },
-    // Add this to handle client-side routing
-    appType: "spa",
   };
 });
