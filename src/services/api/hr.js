@@ -47,7 +47,12 @@ export const hrApi = {
   getInterviewLinks: async () => {
     try {
       const response = await api.get("/hr/interview-links/");
-      return response.data;
+      // Transform URLs to use frontend URL
+      const links = response.data.map((link) => ({
+        ...link,
+        url: `${import.meta.env.VITE_FRONTEND_URL}/interview/${link.token}`,
+      }));
+      return links;
     } catch (error) {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to fetch interview links", 500);
@@ -85,7 +90,14 @@ export const hrApi = {
       };
 
       const response = await api.post("/hr/interview-links/", transformedData);
-      return response.data;
+
+      // Transform the URL to use frontend URL
+      return {
+        ...response.data,
+        url: `${import.meta.env.VITE_FRONTEND_URL}/interview/${
+          response.data.token
+        }`,
+      };
     } catch (error) {
       if (error instanceof APIError) throw error;
       throw new APIError("Failed to create interview link", 500);
