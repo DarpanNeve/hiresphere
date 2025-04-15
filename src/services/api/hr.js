@@ -67,26 +67,6 @@ export const hrApi = {
         position: linkData.position,
         topic: linkData.topic,
         expires_in: parseInt(linkData.expiresIn) || 7,
-        question_types: [
-          "technical",
-          "behavioral",
-          "problem-solving",
-          "experience",
-          "scenario",
-        ],
-        difficulty_distribution: {
-          easy: 2,
-          medium: 4,
-          hard: 2,
-        },
-        categories: [
-          "core_concepts",
-          "best_practices",
-          "problem_solving",
-          "system_design",
-          "communication",
-          "teamwork",
-        ],
       };
 
       const response = await api.post("/hr/interview-links/", transformedData);
@@ -118,15 +98,12 @@ export const hrApi = {
   },
 
   resendInterviewEmail: async (linkId) => {
-    if (!linkId) {
-      throw new APIError("Invalid link ID", 400);
-    }
     try {
-      const response = await api.post(`/hr/interview-links/${linkId}/resend/`);
+      const response = await api.post(`/hr/interview-links/${linkId}/resend`);
       return response.data;
     } catch (error) {
       if (error instanceof APIError) throw error;
-      throw new APIError("Failed to resend email", 500);
+      throw new APIError("Failed to resend interview email", 500);
     }
   },
 

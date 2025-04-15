@@ -3,9 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import Webcam from "react-webcam";
 import { FiMic, FiMicOff, FiArrowRight } from "react-icons/fi";
 import { interviewApi } from "../services/api";
+import { useBodyLanguageAnalysis } from "../components/BodyLanguageAnalysis";
+import { useInterviewMonitoring } from "../services/monitoring/useInterviewMonitoring";
+import { speechService } from "../services/speech";
+import toast from "react-hot-toast";
 
 const PublicInterview = () => {
-  const { linkId } = useParams();
+  const { token } = useParams();
   const navigate = useNavigate();
 
   const [isRecording, setIsRecording] = useState(false);
@@ -27,48 +31,37 @@ const PublicInterview = () => {
   });
   const [showForm, setShowForm] = useState(true);
 
-  const recognition = useRef(null);
   const webcamRef = useRef(null);
+  const recognizerRef = useRef(null);
+
+  const bodyLanguageAnalysis = useBodyLanguageAnalysis(webcamRef, (data) => {
+    // Handle body language analysis data
+    console.log("Body language data:", data);
+  });
+
+  const monitoring = useInterviewMonitoring(webcamRef, {
+    onTerminate: async (reason) => {
+      await handleInterviewTermination(reason);
+    },
+  });
 
   useEffect(() => {
     validateInterviewLink();
+    return () => cleanup();
+  }, [token]);
 
-    if (window.webkitSpeechRecognition) {
-      recognition.current = new window.webkitSpeechRecognition();
-      recognition.current.continuous = true;
-      recognition.current.interimResults = true;
-
-      recognition.current.onresult = (event) => {
-        const currentTranscript = Array.from(event.results)
-          .map((result) => result[0].transcript)
-          .join("");
-        setTranscript(currentTranscript);
-      };
-
-      recognition.current.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        setError("Failed to access microphone. Please check your permissions.");
-        setIsListening(false);
-      };
-
-      recognition.current.onend = () => {
-        setIsListening(false);
-      };
-    } else {
-      setError("Speech recognition is not supported in your browser.");
+  const cleanup = () => {
+    if (recognizerRef.current) {
+      speechService.stopContinuousRecognition(recognizerRef.current);
     }
-
-    return () => {
-      if (recognition.current && isListening) {
-        recognition.current.stop();
-      }
-    };
-  }, [linkId]);
+    monitoring.stopMonitoring();
+    bodyLanguageAnalysis.stopAnalysis();
+  };
 
   const validateInterviewLink = async () => {
     try {
       setLoading(true);
-      const linkData = await interviewApi.validateInterviewLink(linkId);
+      const linkData = await interviewApi.validateInterviewLink(token);
 
       if (!linkData.valid) {
         setError("This interview link is invalid.");
@@ -103,69 +96,77 @@ const PublicInterview = () => {
       setLoading(true);
       setError("");
 
+      // Initialize monitoring systems
+      await Promise.all([
+        monitoring.startMonitoring(),
+        bodyLanguageAnalysis.startAnalysis(),
+      ]);
+
       const result = await interviewApi.startPublicInterview(
-        linkId,
+        token,
         candidateInfo
       );
 
       setQuestions(result.questions);
       setCurrentQuestion(result.questions[0]);
-      setResponses(new Array(result.questions.length).fill(""));
+      setResponses(new Array(result.questions.length).fill(null));
       setShowForm(false);
       setIsRecording(true);
 
-      startListening();
+      // Start speech recognition
+      recognizerRef.current = speechService.startContinuousRecognition(
+        (interimText) => {
+          if (!speechService.isCurrentlySpeaking()) {
+            setTranscript((prev) => prev + " " + interimText);
+          }
+        },
+        (finalText) => {
+          if (!speechService.isCurrentlySpeaking()) {
+            setTranscript((prev) => prev + " " + finalText);
+          }
+        }
+      );
+
+      // Read first question
+      await speechService.speakText(result.questions[0]);
+
+      setLoading(false);
     } catch (err) {
       setError(err.message || "Failed to start interview");
-    } finally {
       setLoading(false);
     }
   };
 
-  const startListening = () => {
-    if (recognition.current && !isListening) {
-      try {
-        recognition.current.start();
-        setIsListening(true);
-        setTranscript("");
-      } catch (error) {
-        console.error("Failed to start recognition:", error);
-      }
-    }
+  const handleInterviewTermination = async (reason) => {
+    cleanup();
+    toast.error("Interview terminated: " + reason);
+    navigate("/");
   };
 
-  const stopListening = () => {
-    if (recognition.current && isListening) {
-      recognition.current.stop();
-      setIsListening(false);
-    }
+  const saveCurrentResponse = async () => {
+    if (!transcript.trim()) return;
+
+    setResponses((prev) => {
+      const newResponses = [...prev];
+      newResponses[questionIndex] = {
+        question: currentQuestion,
+        response: transcript.trim(),
+      };
+      return newResponses;
+    });
   };
 
-  const saveCurrentResponse = () => {
-    if (transcript.trim()) {
-      setResponses((prev) => {
-        const newResponses = [...prev];
-        newResponses[questionIndex] = {
-          question: currentQuestion,
-          response: transcript.trim(),
-        };
-        return newResponses;
-      });
-    }
-  };
-
-  const moveToNextQuestion = () => {
-    saveCurrentResponse();
-    stopListening();
+  const moveToNextQuestion = async () => {
+    await saveCurrentResponse();
 
     if (questionIndex < questions.length - 1) {
       setQuestionIndex((prev) => prev + 1);
-      setCurrentQuestion(questions[questionIndex + 1]);
+      const nextQuestion = questions[questionIndex + 1];
+      setCurrentQuestion(nextQuestion);
       setTranscript("");
 
-      setTimeout(() => {
-        startListening();
-      }, 500);
+      // Read next question
+      await speechService.speakText(nextQuestion);
     } else {
       completeInterview();
     }
@@ -174,25 +175,29 @@ const PublicInterview = () => {
   const completeInterview = async () => {
     try {
       setLoading(true);
-      stopListening();
+      cleanup();
 
-      // Save final response
-      saveCurrentResponse();
+      await saveCurrentResponse();
 
-      // Filter out any empty responses
+      // Filter out empty responses
       const validResponses = responses.filter(
         (r) => r && r.response && r.response.trim()
       );
 
-      await interviewApi.completePublicInterview(linkId, {
+      await interviewApi.completePublicInterview(token, {
         candidateInfo,
         responses: validResponses,
       });
 
-      setIsRecording(false);
       setIsCompleted(true);
+      toast.success("Interview completed successfully!");
+
+      setTimeout(() => {
+        navigate("/");
+      }, 3000);
     } catch (err) {
       setError(err.message || "Failed to complete interview");
+      toast.error("Failed to complete interview");
     } finally {
       setLoading(false);
     }

@@ -126,4 +126,40 @@ export const interviewApi = {
       throw new APIError("Failed to fetch summary", 500);
     }
   },
+
+  validateInterviewLink: async (token) => {
+    try {
+      const response = await api.get(`/public/interview/${token}/validate`);
+      return response.data;
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError("Invalid or expired interview link", 404);
+    }
+  },
+
+  startPublicInterview: async (token, candidateInfo) => {
+    try {
+      const response = await api.post(
+        `/public/interview/${token}/start`,
+        candidateInfo
+      );
+      return response.data;
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError("Failed to start interview", 500);
+    }
+  },
+
+  completePublicInterview: async (token, data) => {
+    try {
+      const response = await api.post(
+        `/public/interview/${token}/complete`,
+        data
+      );
+      return response.data;
+    } catch (error) {
+      if (error instanceof APIError) throw error;
+      throw new APIError("Failed to complete interview", 500);
+    }
+  },
 };
