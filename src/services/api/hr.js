@@ -47,10 +47,9 @@ export const hrApi = {
   getInterviewLinks: async () => {
     try {
       const response = await api.get("/hr/interview-links/");
-      // Transform URLs to use frontend URL
       const links = response.data.map((link) => ({
         ...link,
-        url: `${import.meta.env.VITE_FRONTEND_URL}/interview/${link.token}`,
+        url: `${window.location.origin}/interview/${link.token}`,
       }));
       return links;
     } catch (error) {
@@ -71,12 +70,9 @@ export const hrApi = {
 
       const response = await api.post("/hr/interview-links/", transformedData);
 
-      // Transform the URL to use frontend URL
       return {
         ...response.data,
-        url: `${import.meta.env.VITE_FRONTEND_URL}/interview/${
-          response.data.token
-        }`,
+        url: `${window.location.origin}/interview/${response.data.token}`,
       };
     } catch (error) {
       if (error instanceof APIError) throw error;

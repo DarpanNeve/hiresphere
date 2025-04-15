@@ -6,13 +6,20 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-async def send_interview_email(candidate_email: str, candidate_name: str, interview_link: str, position: str, company_name: str = "AI Interviewer"):
+
+async def send_interview_email(
+    candidate_email: str,
+    candidate_name: str,
+    interview_link: str,
+    position: str,
+    company_name: str = "AI Interviewer",
+):
     try:
         # Create message
         msg = MIMEMultipart()
-        msg['From'] = settings.EMAIL_FROM
-        msg['To'] = candidate_email
-        msg['Subject'] = f"Your Interview Link for {position} at {company_name}"
+        msg["From"] = settings.EMAIL_FROM
+        msg["To"] = candidate_email
+        msg["Subject"] = f"Your Interview Link for {position} at {company_name}"
 
         # Email body
         body = f"""
@@ -29,7 +36,7 @@ async def send_interview_email(candidate_email: str, candidate_name: str, interv
         {company_name} Hiring Team
         """
 
-        msg.attach(MIMEText(body, 'plain'))
+        msg.attach(MIMEText(body, "plain"))
 
         # Connect to SMTP server and send email
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:

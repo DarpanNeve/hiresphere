@@ -3,6 +3,7 @@ from bson import ObjectId
 import secrets
 from app.core.config import settings
 
+
 class InterviewLink:
     def __init__(
         self,
@@ -17,7 +18,7 @@ class InterviewLink:
         completed: bool = False,
         sent_count: int = 0,
         created_at: datetime = None,
-        updated_at: datetime = None
+        updated_at: datetime = None,
     ):
         self.id = id
         self.candidate_name = candidate_name
@@ -48,7 +49,7 @@ class InterviewLink:
             completed=data.get("completed", False),
             sent_count=data.get("sent_count", 0),
             created_at=data.get("created_at"),
-            updated_at=data.get("updated_at")
+            updated_at=data.get("updated_at"),
         )
 
     def to_db(self) -> dict:
@@ -63,7 +64,7 @@ class InterviewLink:
             "completed": self.completed,
             "sent_count": self.sent_count,
             "created_at": self.created_at,
-            "updated_at": self.updated_at
+            "updated_at": self.updated_at,
         }
 
     def is_expired(self) -> bool:
@@ -71,5 +72,5 @@ class InterviewLink:
 
     def get_url(self) -> str:
         # Use the configured frontend URL from settings
-        base_url = settings.FRONTEND_URL.rstrip('/')
+        base_url = settings.FRONTEND_URL.rstrip("/")
         return f"{base_url}/interview/{self.token}"
