@@ -1,4 +1,3 @@
-import * as tf from "@tensorflow/tfjs";
 import * as faceDetection from "@tensorflow-models/face-detection";
 import * as blazeface from "@tensorflow-models/blazeface";
 import * as poseDetection from "@tensorflow-models/pose-detection";
@@ -354,13 +353,14 @@ export class InterviewMonitor {
   handleBeforeUnload = (event) => {
     if (this.state.isMonitoring) {
       // Prevent Picture-in-Picture mode
-      const videos = document.getElementsByTagName('video');
+      const videos = document.getElementsByTagName("video");
       for (const video of videos) {
         video.disablePictureInPicture = true;
       }
-      
+
       event.preventDefault();
-      event.returnValue = "Are you sure you want to leave? This will terminate your interview.";
+      event.returnValue =
+        "Are you sure you want to leave? This will terminate your interview.";
       return event.returnValue;
     }
   };
