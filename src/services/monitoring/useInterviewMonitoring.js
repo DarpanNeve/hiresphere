@@ -87,6 +87,7 @@ export const useInterviewMonitoring = (videoRef, options = {}) => {
   };
 
   return {
+    initialize: initializeMonitoring,
     startMonitoring,
     stopMonitoring,
     isMonitoring,

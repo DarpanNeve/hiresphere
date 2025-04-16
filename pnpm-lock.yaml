@@ -53,6 +53,9 @@ importers:
       '@tensorflow/tfjs-backend-webgl':
         specifier: ^4.22.0
         version: 4.22.0(@tensorflow/tfjs-core@4.22.0)
+      '@tensorflow/tfjs-core':
+        specifier: ^4.17.0
+        version: 4.22.0
       autoprefixer:
         specifier: ^10.4.18
         version: 10.4.20(postcss@8.5.3)

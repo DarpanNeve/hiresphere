@@ -25,17 +25,12 @@ const PublicInterview = () => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [candidateInfo, setCandidateInfo] = useState({
-    name: "",
-    email: "",
-  });
-  const [showForm, setShowForm] = useState(true);
+  const [showStartButton, setShowStartButton] = useState(true);
 
   const webcamRef = useRef(null);
   const recognizerRef = useRef(null);
 
   const bodyLanguageAnalysis = useBodyLanguageAnalysis(webcamRef, (data) => {
-    // Handle body language analysis data
     console.log("Body language data:", data);
   });
 
@@ -87,11 +82,6 @@ const PublicInterview = () => {
   };
 
   const startInterview = async () => {
-    if (!candidateInfo.name.trim() || !candidateInfo.email.trim()) {
-      setError("Please enter your name and email to continue.");
-      return;
-    }
-
     try {
       setLoading(true);
       setError("");
@@ -102,15 +92,15 @@ const PublicInterview = () => {
         bodyLanguageAnalysis.startAnalysis(),
       ]);
 
-      const result = await interviewApi.startPublicInterview(
-        token,
-        candidateInfo
-      );
+      const result = await interviewApi.startPublicInterview(token, {
+        name: interviewData.candidate_name,
+        email: interviewData.candidate_email,
+      });
 
       setQuestions(result.questions);
       setCurrentQuestion(result.questions[0]);
       setResponses(new Array(result.questions.length).fill(null));
-      setShowForm(false);
+      setShowStartButton(false);
       setIsRecording(true);
 
       // Start speech recognition
@@ -185,7 +175,10 @@ const PublicInterview = () => {
       );
 
       await interviewApi.completePublicInterview(token, {
-        candidateInfo,
+        candidateInfo: {
+          name: interviewData.candidate_name,
+          email: interviewData.candidate_email,
+        },
         responses: validResponses,
       });
 
@@ -256,8 +249,7 @@ const PublicInterview = () => {
               submitted and will be reviewed by the hiring team.
             </p>
             <p className="text-gray-600 mb-8">
-              You will receive feedback and next steps via email at{" "}
-              {candidateInfo.email}.
+              You will receive feedback and next steps via email.
             </p>
             <button
               onClick={() => (window.location.href = "/")}
@@ -266,61 +258,20 @@ const PublicInterview = () => {
               Return to Home
             </button>
           </div>
-        ) : showForm ? (
+        ) : showStartButton ? (
           <div className="card p-8 max-w-2xl mx-auto">
             <h2 className="text-2xl font-bold mb-6">
               Welcome to Your Interview
             </h2>
 
             <p className="text-gray-600 mb-6">
-              You're about to start an AI-powered interview for the{" "}
+              You're about to start an interview for the{" "}
               {interviewData?.position} position at {interviewData?.company}.
             </p>
 
             <p className="text-gray-600 mb-6">
               <strong>Interview Topic:</strong> {interviewData?.topic}
             </p>
-
-            {error && (
-              <div className="bg-red-50 text-red-500 p-4 rounded-md mb-6">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-4 mb-8">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  value={candidateInfo.name}
-                  onChange={(e) =>
-                    setCandidateInfo({ ...candidateInfo, name: e.target.value })
-                  }
-                  className="input-field"
-                  placeholder="Enter your full name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email Address *
-                </label>
-                <input
-                  type="email"
-                  value={candidateInfo.email}
-                  onChange={(e) =>
-                    setCandidateInfo({
-                      ...candidateInfo,
-                      email: e.target.value,
-                    })
-                  }
-                  className="input-field"
-                  placeholder="Enter your email address"
-                />
-              </div>
-            </div>
 
             <div className="bg-blue-50 p-4 rounded-md mb-8">
               <h3 className="font-semibold text-blue-800 mb-2">
@@ -417,14 +368,14 @@ const PublicInterview = () => {
                   <div className="space-y-2">
                     {isListening ? (
                       <button
-                        onClick={stopListening}
+                        onClick={() => setIsListening(false)}
                         className="btn-outline w-full flex items-center justify-center"
                       >
                         <FiMicOff className="mr-2" /> Pause Microphone
                       </button>
                     ) : (
                       <button
-                        onClick={startListening}
+                        onClick={() => setIsListening(true)}
                         className="btn-outline w-full flex items-center justify-center"
                       >
                         <FiMic className="mr-2" /> Resume Microphone

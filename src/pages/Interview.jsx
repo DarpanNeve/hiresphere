@@ -8,7 +8,13 @@ import { useInterviewMonitoring } from "../services/monitoring/useInterviewMonit
 import { speechService } from "../services/speech";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
-import { FiArrowRight, FiLoader } from "react-icons/fi";
+import {
+  FiArrowRight,
+  FiLoader,
+  FiMic,
+  FiVideo,
+  FiShield,
+} from "react-icons/fi";
 
 const ANSWER_TIME_LIMIT = 60;
 
@@ -28,6 +34,16 @@ const Interview = () => {
   const [timeRemaining, setTimeRemaining] = useState(ANSWER_TIME_LIMIT);
   const [isAnswering, setIsAnswering] = useState(false);
   const [bodyLanguageData, setBodyLanguageData] = useState(null);
+
+  // New state variables for system checks
+  const [systemChecks, setSystemChecks] = useState({
+    camera: { status: "pending", message: "Checking camera access..." },
+    microphone: { status: "pending", message: "Checking microphone access..." },
+    faceDetection: { status: "pending", message: "Loading face detection..." },
+    poseDetection: { status: "pending", message: "Loading pose detection..." },
+    antiCheat: { status: "pending", message: "Initializing security..." },
+  });
+  const [allChecksComplete, setAllChecksComplete] = useState(false);
 
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -49,33 +65,146 @@ const Interview = () => {
       return;
     }
 
-    // Initialize models
-    initializeModels();
+    // Initialize all systems
+    initializeSystems();
 
     if (webcamRef.current?.video) {
       webcamRef.current.video.disablePictureInPicture = true;
     }
 
+    // Prevent tab closing
+    window.onbeforeunload = (e) => {
+      if (!isCompleted) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+
     return () => {
       cleanup();
+      window.onbeforeunload = null;
     };
   }, [user, navigate]);
 
-  const initializeModels = async () => {
-    setModelLoading(true);
+  const initializeSystems = async () => {
     try {
-      // Initialize monitoring and body language analysis
-      await Promise.all([
-        monitoring.startMonitoring(),
-        bodyLanguageAnalysis.startAnalysis(),
-      ]);
+      // Check camera access
+      await checkCamera();
+
+      // Check microphone access
+      await checkMicrophone();
+
+      // Initialize face detection
+      await initializeFaceDetection();
+
+      // Initialize pose detection
+      await initializePoseDetection();
+
+      // Initialize anti-cheat
+      await initializeAntiCheat();
+
+      setAllChecksComplete(true);
       setModelLoading(false);
     } catch (error) {
-      console.error("Failed to initialize models:", error);
-      setError(
-        "Failed to initialize interview systems. Please refresh and try again."
-      );
-      setModelLoading(false);
+      console.error("System initialization failed:", error);
+      toast.error("Failed to initialize interview systems");
+    }
+  };
+
+  const checkCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setSystemChecks((prev) => ({
+        ...prev,
+        camera: { status: "success", message: "Camera access granted" },
+      }));
+    } catch (error) {
+      setSystemChecks((prev) => ({
+        ...prev,
+        camera: { status: "error", message: "Camera access denied" },
+      }));
+      throw new Error("Camera access required");
+    }
+  };
+
+  const checkMicrophone = async () => {
+    try {
+      const hasAccess = await speechService.checkMicrophonePermission();
+      if (!hasAccess) throw new Error("Microphone permission denied");
+      setSystemChecks((prev) => ({
+        ...prev,
+        microphone: { status: "success", message: "Microphone access granted" },
+      }));
+    } catch (error) {
+      setSystemChecks((prev) => ({
+        ...prev,
+        microphone: { status: "error", message: "Microphone access denied" },
+      }));
+      throw new Error("Microphone access required");
+    }
+  };
+
+  const initializeFaceDetection = async () => {
+    try {
+      await bodyLanguageAnalysis.initializeFaceDetection();
+      setSystemChecks((prev) => ({
+        ...prev,
+        faceDetection: { status: "success", message: "Face detection ready" },
+      }));
+    } catch (error) {
+      setSystemChecks((prev) => ({
+        ...prev,
+        faceDetection: {
+          status: "error",
+          message: "Face detection failed to load",
+        },
+      }));
+      throw new Error("Face detection initialization failed");
+    }
+  };
+
+  const initializePoseDetection = async () => {
+    try {
+      await bodyLanguageAnalysis.initializePoseDetection();
+      setSystemChecks((prev) => ({
+        ...prev,
+        poseDetection: { status: "success", message: "Pose detection ready" },
+      }));
+    } catch (error) {
+      setSystemChecks((prev) => ({
+        ...prev,
+        poseDetection: {
+          status: "error",
+          message: "Pose detection failed to load",
+        },
+      }));
+      throw new Error("Pose detection initialization failed");
+    }
+  };
+
+  const initializeAntiCheat = async () => {
+    try {
+      await monitoring.initialize({
+        maxWarnings: 3,
+        warningTimeout: 10000,
+        outOfFrameTimeout: 5000,
+        maxHeadRotation: 45,
+        maxTabUnfocusTime: 3000,
+      });
+      setSystemChecks((prev) => ({
+        ...prev,
+        antiCheat: { status: "success", message: "Security systems ready" },
+      }));
+    } catch (error) {
+      setSystemChecks((prev) => ({
+        ...prev,
+        antiCheat: {
+          status: "error",
+          message: "Security initialization failed",
+        },
+      }));
+      throw new Error("Anti-cheat initialization failed");
     }
   };
 
@@ -210,15 +339,13 @@ const Interview = () => {
     if (!transcript.trim()) return;
 
     try {
-      // Save to local state
-      setResponses((prev) => {
-        const newResponses = [...prev];
-        newResponses[questionIndex] = {
-          question: currentQuestion,
-          response: transcript.trim(),
-        };
-        return newResponses;
-      });
+      // Save to local state first
+      const newResponses = [...responses];
+      newResponses[questionIndex] = {
+        question: currentQuestion,
+        response: transcript.trim(),
+      };
+      setResponses(newResponses);
 
       // Submit to backend
       if (interviewData?.id) {
@@ -229,6 +356,9 @@ const Interview = () => {
             response: transcript.trim(),
           },
         });
+
+        // Wait a moment to ensure the response is saved
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     } catch (error) {
       console.error("Failed to save response:", error);
@@ -264,10 +394,20 @@ const Interview = () => {
       setLoading(true);
       cleanup();
 
+      // Save the final response
       await saveCurrentResponse();
 
+      // Wait a moment to ensure all responses are saved
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       if (interviewData?.id) {
+        // Complete the interview first
         await interviewApi.completeInterview(interviewData.id);
+
+        // Wait a moment before starting analysis
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Start the analysis
         await interviewApi.analyzeInterview(interviewData.id);
       }
 
@@ -292,6 +432,65 @@ const Interview = () => {
   };
 
   if (!user) return null;
+
+  if (!allChecksComplete) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+          <h2 className="text-2xl font-bold text-center mb-8">
+            Initializing Interview Systems
+          </h2>
+
+          <div className="space-y-6">
+            {Object.entries(systemChecks).map(([key, check]) => (
+              <div key={key} className="flex items-center justify-between">
+                <div className="flex items-center">
+                  {key === "camera" && <FiVideo className="mr-3" />}
+                  {key === "microphone" && <FiMic className="mr-3" />}
+                  {key === "antiCheat" && <FiShield className="mr-3" />}
+                  <span className="capitalize">{check.message}</span>
+                </div>
+                <div className="flex items-center">
+                  {check.status === "pending" && (
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent" />
+                  )}
+                  {check.status === "success" && (
+                    <div className="text-green-500">✓</div>
+                  )}
+                  {check.status === "error" && (
+                    <div className="text-red-500">✗</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {Object.values(systemChecks).some(
+            (check) => check.status === "error"
+          ) && (
+            <div className="mt-8 text-center">
+              <p className="text-red-500 mb-4">
+                Some required systems failed to initialize. Please ensure:
+              </p>
+              <ul className="text-left text-sm text-gray-600 space-y-2">
+                <li>• Camera and microphone permissions are granted</li>
+                <li>
+                  • You are using a supported browser (Chrome recommended)
+                </li>
+                <li>• Your internet connection is stable</li>
+              </ul>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-4 btn-primary"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (monitoring.isTerminated) {
     return (
