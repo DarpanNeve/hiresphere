@@ -1,473 +1,665 @@
+import * as tf from "@tensorflow/tfjs";
 import * as faceDetection from "@tensorflow-models/face-detection";
-import * as blazeface from "@tensorflow-models/blazeface";
-import * as poseDetection from "@tensorflow-models/pose-detection";
 
-export class InterviewMonitor {
+class InterviewMonitor {
   constructor(options = {}) {
     this.options = {
-      faceCheckInterval: 4000, // Increased from 1000ms to 2000ms
-      poseCheckInterval: 4000, // Increased from 1000ms to 2000ms
-      tabFocusInterval: 2000,
-      maxWarnings: 9,
-      warningTimeout: 15000, // Increased from 10s to 15s
-      outOfFrameTimeout: 8000, // Increased from 5s to 8s
-      maxHeadRotation: 120, // Increased from 45 to 60 degrees
-      maxTabUnfocusTime: 5000, // Increased from 3s to 5s
-      warningThreshold: 3, // Number of consecutive violations before warning
+      maxWarnings: options.maxWarnings || 3,
+      warningTimeout: options.warningTimeout || 10000, // Reduced from 10000
+      outOfFrameTimeout: options.outOfFrameTimeout || 1500, // Reduced from 2000
+      maxHeadRotation: options.maxHeadRotation || 25, // Reduced from 30
+      maxTabUnfocusTime: options.maxTabUnfocusTime || 500, // Reduced from 1000
+      maxFaceViolations: options.maxFaceViolations || 10, // Reduced from 3
+      detectionInterval: options.detectionInterval || 100, // Reduced from 200
       ...options,
     };
 
-    this.models = {
-      face: null,
-      pose: null,
-      blazeFace: null,
-    };
+    // Debug mode for development
+    this.debug = true;
 
-    this.state = {
-      isInitialized: false,
-      isMonitoring: false,
-      warnings: [],
-      lastWarningTime: 0,
-      outOfFrameStartTime: null,
-      tabFocusStartTime: Date.now(),
-      lastFacePosition: null,
-      lastPosePosition: null,
-      consecutiveViolations: 0,
-      intervals: {
-        face: null,
-        pose: null,
-        tabFocus: null,
-      },
-      violations: {
-        outOfFrame: 0,
-        multiplePersons: 0,
-        lookingAway: 0,
-        tabSwitching: 0,
-      },
-    };
-
+    this.warnings = [];
+    this.isMonitoring = false;
+    this.lastWarningTime = 0;
     this.callbacks = {
-      onWarning: () => {},
-      onViolation: () => {},
-      onTerminate: () => {},
+      onWarning: null,
+      onTerminate: null,
     };
+
+    // Detection state with reduced thresholds
+    this.faceDetector = null;
+    this.detectionInterval = null;
+    this.videoElement = null;
+    this.lastFacePosition = null;
+    this.consecutiveNoFaceFrames = 0;
+    this.consecutiveMultipleFacesFrames = 0;
+    this.consecutiveMovementFrames = 0;
+
+    // Violation tracking with lower thresholds
+    this.violations = {
+      no_face_detected: 0,
+      multiple_faces_detected: 0,
+      excessive_movement: 0,
+      excessive_tab_switching: 0,
+      window_focus_lost: 0,
+      blocked_key_press: 0,
+      blocked_key_combination: 0,
+      clipboard_operation: 0,
+      context_menu: 0,
+      mouse_leave: 0,
+      screen_recording_detected: 0,
+      dev_tools_detected: 0,
+      console_tampering: 0,
+      suspicious_window_state: 0,
+      extended_tab_unfocus: 0,
+      rapid_key_pressing: 0,
+    };
+
+    // Window state tracking
+    this.originalWindowState = {
+      width: window.outerWidth,
+      height: window.outerHeight,
+      screenX: window.screenX,
+      screenY: window.screenY,
+    };
+
+    // Tab focus tracking with shorter timeouts
+    this.tabFocusTime = Date.now();
+    this.lastTabSwitchTime = Date.now();
+    this.tabSwitchCount = 0;
+    this.tabBlurCount = 0;
+    this.lastTabBlurTime = 0;
+
+    // Screen recording detection
+    this.screenCaptureAttempts = 0;
+    this.lastScreenCaptureCheck = Date.now();
+
+    // Keyboard tracking
+    this.lastKeyPressTime = Date.now();
+    this.keyPressCount = 0;
+    this.keyPressHistory = [];
+
+    // Bind methods
+    this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
+    this.handleWindowBlur = this.handleWindowBlur.bind(this);
+    this.handleWindowFocus = this.handleWindowFocus.bind(this);
+    this.handleKeyDown = this.handleKeyDown.bind(this);
+    this.handleMouseLeave = this.handleMouseLeave.bind(this);
+    this.handleContextMenu = this.handleContextMenu.bind(this);
+    this.handleClipboardEvent = this.handleClipboardEvent.bind(this);
+
+    // Initialize visibility API tracking
+    this.lastVisibilityChange = Date.now();
+    this.visibilityChangeCount = 0;
+
+    // Debug logging
+    if (this.debug) {
+      console.log("InterviewMonitor initialized with options:", this.options);
+    }
   }
 
   async initialize() {
     try {
-      // Load face detection model with more lenient settings
-      this.models.face = await faceDetection.createDetector(
+      // Initialize TensorFlow.js with WebGL backend for better performance
+      await tf.setBackend("webgl");
+      await tf.ready();
+
+      // Load face detection model with optimized settings
+      this.faceDetector = await faceDetection.createDetector(
         faceDetection.SupportedModels.MediaPipeFaceDetector,
         {
           runtime: "tfjs",
-          refineLandmarks: false, // Changed to false for better performance
-          maxFaces: 2, // Increased to 2 to be more lenient
-          minFaceSize: 0.1, // Reduced from default for better detection
+          refineLandmarks: true,
+          maxFaces: 2,
+          scoreThreshold: 0.75,
         }
       );
 
-      // Load pose detection model
-      this.models.pose = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        {
-          modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
-          enableSmoothing: true,
-        }
-      );
+      // Set up event listeners
+      this.setupEventListeners();
 
-      // Load BlazeFace with more lenient settings
-      this.models.blazeFace = await blazeface.load({
-        maxFaces: 2,
-        scoreThreshold: 0.5, // Reduced threshold for easier detection
-      });
+      // Initialize periodic checks
+      this.setupPeriodicChecks();
 
-      this.state.isInitialized = true;
+      // Initialize fullscreen monitoring
+      this.setupFullscreenMonitoring();
+
       return true;
     } catch (error) {
-      console.error("Failed to initialize interview monitor:", error);
-      throw new Error("Failed to initialize monitoring system");
+      console.error("Failed to initialize monitoring:", error);
+      return false;
     }
   }
 
-  setCallbacks(callbacks) {
-    this.callbacks = { ...this.callbacks, ...callbacks };
-  }
-
-  async startMonitoring(videoElement) {
-    if (!this.state.isInitialized) {
-      throw new Error("Monitor not initialized");
-    }
-
-    if (!videoElement) {
-      throw new Error("Video element required");
-    }
-
-    this.state.isMonitoring = true;
-    this.setupTabFocusMonitoring();
-    this.startFaceMonitoring(videoElement);
-    this.startPoseMonitoring(videoElement);
-
-    // Reset state
-    this.state.violations = {
-      outOfFrame: 0,
-      multiplePersons: 0,
-      lookingAway: 0,
-      tabSwitching: 0,
-    };
-    this.state.warnings = [];
-    this.state.consecutiveViolations = 0;
-  }
-
-  stopMonitoring() {
-    this.state.isMonitoring = false;
-    Object.values(this.state.intervals).forEach((interval) => {
-      if (interval) clearInterval(interval);
-    });
-    this.state.intervals = { face: null, pose: null, tabFocus: null };
-  }
-
-  setupTabFocusMonitoring() {
+  setupEventListeners() {
+    // Tab visibility
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
+
+    // Window focus
     window.addEventListener("blur", this.handleWindowBlur);
     window.addEventListener("focus", this.handleWindowFocus);
+
+    // Keyboard events
+    document.addEventListener("keydown", this.handleKeyDown, true);
+
+    // Mouse events
+    document.addEventListener("mouseleave", this.handleMouseLeave);
+    document.addEventListener("contextmenu", this.handleContextMenu);
+
+    // Copy/Paste events
+    document.addEventListener("copy", this.handleClipboardEvent);
+    document.addEventListener("paste", this.handleClipboardEvent);
+    document.addEventListener("cut", this.handleClipboardEvent);
+
+    // Window events
+    window.addEventListener("resize", this.handleWindowResize);
     window.addEventListener("beforeunload", this.handleBeforeUnload);
 
-    this.state.intervals.tabFocus = setInterval(() => {
-      this.checkTabFocus();
-    }, this.options.tabFocusInterval);
+    // Fullscreen changes
+    document.addEventListener(
+      "fullscreenchange",
+      this.handleFullscreenChange.bind(this)
+    );
+    document.addEventListener(
+      "webkitfullscreenchange",
+      this.handleFullscreenChange.bind(this)
+    );
+    document.addEventListener(
+      "mozfullscreenchange",
+      this.handleFullscreenChange.bind(this)
+    );
+    document.addEventListener(
+      "MSFullscreenChange",
+      this.handleFullscreenChange.bind(this)
+    );
   }
 
-  async startFaceMonitoring(videoElement) {
-    this.state.intervals.face = setInterval(async () => {
-      if (!this.state.isMonitoring) return;
+  setupPeriodicChecks() {
+    setInterval(() => {
+      if (!this.isMonitoring) return;
 
+      this.checkDevTools();
+      this.checkWindowState();
+      this.checkScreenCapture();
+      this.checkTabFocus();
+      this.checkVisibilityChanges();
+      this.checkBrowserZoom();
+    }, 1000);
+  }
+
+  setupFullscreenMonitoring() {
+    // Track fullscreen state
+    this.isFullscreen = false;
+    this.fullscreenChangeCount = 0;
+    this.lastFullscreenChange = Date.now();
+  }
+
+  async startFaceDetection() {
+    if (!this.videoElement || !this.faceDetector) return;
+
+    this.detectionInterval = setInterval(async () => {
       try {
-        // Use BlazeFace for initial quick detection
-        const blazeFaceResult = await this.models.blazeFace.estimateFaces(
-          videoElement,
-          false
-        );
+        const faces = await this.faceDetector.estimateFaces(this.videoElement);
 
-        if (blazeFaceResult.length === 0) {
-          // Confirm with MediaPipe before triggering warning
-          const faces = await this.models.face.estimateFaces(videoElement);
-
-          if (faces.length === 0) {
-            this.handleNoFaceDetected();
-          } else if (faces.length > 1) {
-            // Only warn if multiple faces persist
-            if (
-              this.state.consecutiveViolations >= this.options.warningThreshold
-            ) {
-              this.handleMultipleFaces();
-            } else {
-              this.state.consecutiveViolations++;
-            }
-          } else {
-            this.state.consecutiveViolations = 0;
-            this.analyzeFacePosition(faces[0]);
+        // No face detected
+        if (faces.length === 0) {
+          this.consecutiveNoFaceFrames++;
+          if (this.consecutiveNoFaceFrames >= 10) {
+            // Reduced threshold
+            this.addViolation("no_face_detected", "No face detected in frame");
+            this.consecutiveNoFaceFrames = 0;
           }
         } else {
-          this.state.consecutiveViolations = 0;
-          if (blazeFaceResult.length > 1) {
-            // Verify with MediaPipe before warning
-            const faces = await this.models.face.estimateFaces(videoElement);
-            if (faces.length > 1) {
-              this.handleMultipleFaces();
-            }
+          this.consecutiveNoFaceFrames = 0;
+        }
+
+        // Multiple faces detected
+        if (faces.length > 1) {
+          this.consecutiveMultipleFacesFrames++;
+          if (this.consecutiveMultipleFacesFrames >= 5) {
+            // Reduced threshold
+            this.addViolation(
+              "multiple_faces_detected",
+              "Multiple faces detected"
+            );
+            this.consecutiveMultipleFacesFrames = 0;
           }
+        } else {
+          this.consecutiveMultipleFacesFrames = 0;
+        }
+
+        // Check face movement and position
+        if (faces.length === 1) {
+          const face = faces[0];
+          this.checkFaceMovement(face);
+          this.checkFacePosition(face);
         }
       } catch (error) {
-        console.error("Face monitoring error:", error);
+        console.error("Face detection error:", error);
       }
-    }, this.options.faceCheckInterval);
+    }, this.options.detectionInterval);
   }
 
-  async startPoseMonitoring(videoElement) {
-    this.state.intervals.pose = setInterval(async () => {
-      if (!this.state.isMonitoring) return;
-
-      try {
-        const poses = await this.models.pose.estimatePoses(videoElement);
-
-        if (poses.length > 0) {
-          this.analyzePosePosition(poses[0]);
-        }
-      } catch (error) {
-        console.error("Pose monitoring error:", error);
-      }
-    }, this.options.poseCheckInterval);
-  }
-
-  handleNoFaceDetected() {
-    const now = Date.now();
-
-    if (!this.state.outOfFrameStartTime) {
-      this.state.outOfFrameStartTime = now;
-    } else if (
-      now - this.state.outOfFrameStartTime >
-      this.options.outOfFrameTimeout
-    ) {
-      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
-        this.state.violations.outOfFrame++;
-        this.triggerWarning("Face not detected in frame", "outOfFrame");
-      } else {
-        this.state.consecutiveViolations++;
-      }
-    }
-  }
-
-  handleMultipleFaces() {
-    if (this.state.consecutiveViolations >= this.options.warningThreshold) {
-      this.state.violations.multiplePersons++;
-      this.triggerWarning(
-        "Multiple people detected in frame",
-        "multiplePersons"
-      );
-    } else {
-      this.state.consecutiveViolations++;
-    }
-  }
-
-  analyzeFacePosition(face) {
-    this.state.outOfFrameStartTime = null;
-    this.state.consecutiveViolations = 0;
-
-    // Calculate head rotation from face landmarks
-    const rotation = this.calculateHeadRotation(face.keypoints);
-
-    // More lenient head rotation check
-    if (
-      Math.abs(rotation.yaw) > this.options.maxHeadRotation ||
-      Math.abs(rotation.pitch) > this.options.maxHeadRotation * 0.8
-    ) {
-      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
-        this.state.violations.lookingAway++;
-        this.triggerWarning("Looking away from screen", "lookingAway");
-      } else {
-        this.state.consecutiveViolations++;
-      }
-    }
-
-    this.state.lastFacePosition = face;
-  }
-
-  analyzePosePosition(pose) {
-    // More lenient posture thresholds
-    const shoulderAlignment = this.calculateShoulderAlignment(pose.keypoints);
-    const spineAlignment = this.calculateSpineAlignment(pose.keypoints);
-
-    if (shoulderAlignment < 0.5 || spineAlignment < 0.5) {
-      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
-        this.triggerWarning("Poor posture detected", "posture");
-      } else {
-        this.state.consecutiveViolations++;
-      }
-    } else {
-      this.state.consecutiveViolations = 0;
-    }
-
-    this.state.lastPosePosition = pose;
-  }
-
-  calculateHeadRotation(landmarks) {
-    const leftEye = landmarks.find((l) => l.name === "leftEye");
-    const rightEye = landmarks.find((l) => l.name === "rightEye");
-    const nose = landmarks.find((l) => l.name === "noseTip");
-
-    if (!leftEye || !rightEye || !nose) return { yaw: 0, pitch: 0 };
-
-    const eyeDistance = Math.sqrt(
-      Math.pow(rightEye.x - leftEye.x, 2) + Math.pow(rightEye.y - leftEye.y, 2)
-    );
-
-    const eyeMidpoint = {
-      x: (leftEye.x + rightEye.x) / 2,
-      y: (leftEye.y + rightEye.y) / 2,
+  checkFaceMovement(face) {
+    const currentPosition = {
+      x: face.box.xCenter || face.box.xMin + face.box.width / 2,
+      y: face.box.yCenter || face.box.yMin + face.box.height / 2,
     };
 
-    // More lenient angle calculations
-    const yaw =
-      Math.atan2(nose.x - eyeMidpoint.x, eyeDistance) * (180 / Math.PI);
-    const pitch =
-      Math.atan2(nose.y - eyeMidpoint.y, eyeDistance) * (180 / Math.PI);
-
-    return { yaw, pitch };
-  }
-
-  calculateShoulderAlignment(keypoints) {
-    const leftShoulder = keypoints.find((k) => k.name === "left_shoulder");
-    const rightShoulder = keypoints.find((k) => k.name === "right_shoulder");
-
-    if (!leftShoulder || !rightShoulder) return 1;
-
-    const heightDiff = Math.abs(leftShoulder.y - rightShoulder.y);
-    // More lenient shoulder alignment threshold
-    return Math.max(0, 1 - heightDiff / 100);
-  }
-
-  calculateSpineAlignment(keypoints) {
-    const relevantPoints = ["nose", "neck", "mid_spine", "pelvis"]
-      .map((name) => keypoints.find((k) => k.name === name))
-      .filter(Boolean);
-
-    if (relevantPoints.length < 3) return 1;
-
-    let totalAngle = 0;
-    for (let i = 0; i < relevantPoints.length - 2; i++) {
-      const angle = this.calculateAngle(
-        relevantPoints[i],
-        relevantPoints[i + 1],
-        relevantPoints[i + 2]
+    if (this.lastFacePosition) {
+      const movement = Math.sqrt(
+        Math.pow(currentPosition.x - this.lastFacePosition.x, 2) +
+          Math.pow(currentPosition.y - this.lastFacePosition.y, 2)
       );
-      totalAngle += Math.abs(angle - 180);
-    }
 
-    // More lenient spine alignment threshold
-    return Math.max(0, 1 - totalAngle / 270);
-  }
-
-  calculateAngle(p1, p2, p3) {
-    const angle =
-      Math.atan2(p3.y - p2.y, p3.x - p2.x) -
-      Math.atan2(p1.y - p2.y, p1.x - p2.x);
-    return ((angle * 180) / Math.PI + 360) % 360;
-  }
-
-  handleVisibilityChange = () => {
-    if (document.hidden) {
-      this.handleTabUnfocus();
-    } else {
-      this.handleTabFocus();
-    }
-  };
-
-  handleWindowBlur = () => {
-    this.handleTabUnfocus();
-  };
-
-  handleWindowFocus = () => {
-    this.handleTabFocus();
-  };
-
-  handleBeforeUnload = (event) => {
-    if (this.state.isMonitoring) {
-      // Prevent Picture-in-Picture mode
-      const videos = document.getElementsByTagName("video");
-      for (const video of videos) {
-        video.disablePictureInPicture = true;
-      }
-
-      event.preventDefault();
-      event.returnValue =
-        "Are you sure you want to leave? This will terminate your interview.";
-      return event.returnValue;
-    }
-  };
-
-  handleTabUnfocus() {
-    const now = Date.now();
-    if (now - this.state.lastWarningTime > this.options.maxTabUnfocusTime) {
-      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
-        this.state.violations.tabSwitching++;
-        this.triggerWarning("Tab switching detected", "tabSwitching");
+      if (movement > 20) {
+        // Reduced threshold
+        this.consecutiveMovementFrames++;
+        if (this.consecutiveMovementFrames >= 5) {
+          // Reduced threshold
+          this.addViolation(
+            "excessive_movement",
+            "Excessive head movement detected"
+          );
+          this.consecutiveMovementFrames = 0;
+        }
       } else {
-        this.state.consecutiveViolations++;
-      }
-    }
-    this.state.tabFocusStartTime = now;
-  }
-
-  handleTabFocus() {
-    this.state.lastWarningTime = Date.now();
-    this.state.consecutiveViolations = 0;
-  }
-
-  checkTabFocus() {
-    const now = Date.now();
-    const unfocusedTime = now - this.state.tabFocusStartTime;
-
-    if (unfocusedTime > this.options.maxTabUnfocusTime) {
-      if (this.state.consecutiveViolations >= this.options.warningThreshold) {
-        this.state.violations.tabSwitching++;
-        this.triggerWarning(
-          "Extended period away from interview",
-          "tabSwitching"
+        this.consecutiveMovementFrames = Math.max(
+          0,
+          this.consecutiveMovementFrames - 1
         );
-      } else {
-        this.state.consecutiveViolations++;
       }
+    }
+
+    this.lastFacePosition = currentPosition;
+  }
+
+  checkFacePosition(face) {
+    const videoWidth = this.videoElement.videoWidth;
+    const videoHeight = this.videoElement.videoHeight;
+
+    // Check if face is too close or too far
+    const faceSize =
+      (face.box.width * face.box.height) / (videoWidth * videoHeight);
+    if (faceSize < 0.1 || faceSize > 0.5) {
+      this.addViolation(
+        "invalid_face_position",
+        "Please maintain appropriate distance from camera"
+      );
+    }
+
+    // Check if face is centered
+    const centerX = face.box.xCenter || face.box.xMin + face.box.width / 2;
+    const centerY = face.box.yCenter || face.box.yMin + face.box.height / 2;
+
+    const offsetX = Math.abs(centerX - videoWidth / 2) / videoWidth;
+    const offsetY = Math.abs(centerY - videoHeight / 2) / videoHeight;
+
+    if (offsetX > 0.3 || offsetY > 0.3) {
+      this.addViolation(
+        "face_not_centered",
+        "Please center your face in the frame"
+      );
     }
   }
 
-  triggerWarning(reason, type) {
-    const now = Date.now();
+  handleVisibilityChange() {
+    if (!this.isMonitoring) return;
 
-    // Check warning cooldown
-    if (now - this.state.lastWarningTime < this.options.warningTimeout) {
+    const now = Date.now();
+    if (document.hidden) {
+      this.visibilityChangeCount++;
+
+      if (this.debug) {
+        console.log(
+          `Tab visibility change detected (${this.visibilityChangeCount})`
+        );
+      }
+
+      // More aggressive visibility change detection
+      if (this.visibilityChangeCount >= 2) {
+        // Reduced from 3
+        this.addViolation(
+          "excessive_tab_switching",
+          "Multiple tab switches detected"
+        );
+        this.visibilityChangeCount = 0;
+      }
+
+      // Track time hidden
+      this.lastVisibilityChange = now;
+    }
+  }
+
+  handleWindowBlur() {
+    if (!this.isMonitoring) return;
+
+    const now = Date.now();
+    this.tabBlurCount++;
+    this.lastTabBlurTime = now;
+
+    if (this.debug) {
+      console.log(`Window blur detected (${this.tabBlurCount})`);
+    }
+
+    // More aggressive blur detection
+    if (this.tabBlurCount >= 2) {
+      // Reduced from 3
+      this.addViolation(
+        "window_focus_lost",
+        "Window focus lost multiple times"
+      );
+      this.tabBlurCount = 0;
+    }
+
+    const blurDuration = now - this.tabFocusTime;
+    if (blurDuration > this.options.maxTabUnfocusTime) {
+      this.addViolation(
+        "extended_tab_unfocus",
+        "Window focus lost for too long"
+      );
+    }
+  }
+
+  handleWindowFocus() {
+    if (!this.isMonitoring) return;
+
+    const now = Date.now();
+    const unfocusedDuration = now - this.lastTabBlurTime;
+
+    if (this.debug) {
+      console.log(`Window focus restored after ${unfocusedDuration}ms`);
+    }
+
+    this.tabFocusTime = now;
+  }
+
+  handleKeyDown(event) {
+    if (!this.isMonitoring) return;
+
+    const now = Date.now();
+    const blockedKeys = ["Tab", "PrintScreen", "F12", "F11", "Escape"];
+    const blockedCombos = [
+      { key: "c", ctrl: true },
+      { key: "v", ctrl: true },
+      { key: "p", ctrl: true },
+      { key: "i", ctrl: true },
+      { key: "u", ctrl: true },
+      { key: "s", ctrl: true },
+      { key: "r", ctrl: true },
+      { key: "j", ctrl: true },
+    ];
+
+    // Track key press history
+    this.keyPressHistory.push({
+      key: event.key,
+      timestamp: now,
+      ctrl: event.ctrlKey,
+      alt: event.altKey,
+      shift: event.shiftKey,
+    });
+
+    // Keep only recent history
+    this.keyPressHistory = this.keyPressHistory.filter(
+      (press) => now - press.timestamp < 1000
+    );
+
+    if (this.debug) {
+      console.log(
+        `Key pressed: ${event.key} (${this.keyPressHistory.length} recent presses)`
+      );
+    }
+
+    // Check for blocked keys
+    if (blockedKeys.includes(event.key)) {
+      event.preventDefault();
+      this.addViolation(
+        "blocked_key_press",
+        `Blocked key pressed: ${event.key}`
+      );
       return;
     }
 
+    // Check for blocked combinations
+    for (const combo of blockedCombos) {
+      if (event.key.toLowerCase() === combo.key && event.ctrlKey) {
+        event.preventDefault();
+        this.addViolation(
+          "blocked_key_combination",
+          `Blocked combination: Ctrl+${combo.key}`
+        );
+        return;
+      }
+    }
+
+    // Detect rapid key pressing
+    if (this.keyPressHistory.length >= 5) {
+      // Reduced from 10
+      const timeSpan = now - this.keyPressHistory[0].timestamp;
+      if (timeSpan < 1000) {
+        // 1 second window
+        this.addViolation(
+          "rapid_key_pressing",
+          "Suspicious rapid key pressing"
+        );
+        this.keyPressHistory = [];
+      }
+    }
+  }
+
+  handleClipboardEvent(event) {
+    if (this.isMonitoring) {
+      event.preventDefault();
+      this.addViolation("clipboard_operation", "Clipboard operation attempted");
+    }
+  }
+
+  handleContextMenu(event) {
+    if (this.isMonitoring) {
+      event.preventDefault();
+      this.addViolation("context_menu", "Right-click menu attempted");
+    }
+  }
+
+  handleMouseLeave(event) {
+    if (this.isMonitoring && event.clientY <= 0) {
+      this.addViolation("mouse_leave", "Mouse left the window");
+    }
+  }
+
+  handleFullscreenChange() {
+    if (!this.isMonitoring) return;
+
+    const now = Date.now();
+    const isCurrentlyFullscreen = Boolean(
+      document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement
+    );
+
+    if (this.isFullscreen !== isCurrentlyFullscreen) {
+      this.fullscreenChangeCount++;
+      if (this.fullscreenChangeCount >= 3) {
+        this.addViolation("fullscreen_toggle", "Excessive fullscreen toggling");
+      }
+    }
+
+    this.isFullscreen = isCurrentlyFullscreen;
+    this.lastFullscreenChange = now;
+  }
+
+  checkBrowserZoom() {
+    const zoom = Math.round((window.outerWidth / window.innerWidth) * 100);
+    if (zoom !== 100) {
+      this.addViolation("browser_zoom", "Browser zoom level changed");
+    }
+  }
+
+  checkVisibilityChanges() {
+    const now = Date.now();
+    if (
+      this.visibilityChangeCount > 5 &&
+      now - this.lastVisibilityChange < 10000
+    ) {
+      this.addViolation(
+        "suspicious_visibility_changes",
+        "Suspicious tab visibility changes"
+      );
+      this.visibilityChangeCount = 0;
+    }
+  }
+
+  addViolation(type, details = "") {
+    const now = Date.now();
+
+    // Reduced cooldown between violations
+    if (now - this.lastWarningTime < 1000) return; // Reduced from 3000
+
+    if (this.violations[type] === undefined) {
+      this.violations[type] = 0;
+    }
+
+    this.violations[type]++;
+
+    if (this.debug) {
+      console.log(
+        `Violation detected: ${type} (Count: ${this.violations[type]})`,
+        details
+      );
+    }
+
+    // More aggressive violation handling
+    if (this.violations[type] >= 2) {
+      // Reduced from 3
+      this.addWarning(`${details || `Security violation detected: ${type}`}`);
+    }
+
+    this.lastWarningTime = now;
+  }
+
+  addWarning(reason) {
     const warning = {
       reason,
-      type,
-      timestamp: now,
-      warningNumber: this.state.warnings.length + 1,
-      violations: { ...this.state.violations },
+      timestamp: Date.now(),
+      warningNumber: this.warnings.length + 1,
     };
 
-    this.state.warnings.push(warning);
-    this.state.lastWarningTime = now;
-    this.state.consecutiveViolations = 0;
+    this.warnings.push(warning);
 
-    // Notify callback with remaining warnings
-    if (this.callbacks.onWarning) {
-      const remainingWarnings =
-        this.options.maxWarnings - this.state.warnings.length;
-      this.callbacks.onWarning({
-        ...warning,
-        remainingWarnings,
-      });
+    if (this.debug) {
+      console.log(
+        `Warning added (${this.warnings.length}/${this.options.maxWarnings}):`,
+        reason
+      );
     }
 
-    // Check if max warnings reached
-    if (this.state.warnings.length >= this.options.maxWarnings) {
-      this.handleMaxWarningsExceeded();
+    if (this.callbacks.onWarning) {
+      this.callbacks.onWarning(warning);
+    }
+
+    // Check for termination with more aggressive threshold
+    if (this.warnings.length >= this.options.maxWarnings) {
+      if (this.debug) {
+        console.log("Maximum warnings reached, terminating interview");
+      }
+      this.terminateInterview();
     }
   }
 
-  handleMaxWarningsExceeded() {
+  terminateInterview() {
+    this.isMonitoring = false;
+    this.cleanup();
+
     if (this.callbacks.onTerminate) {
       this.callbacks.onTerminate({
-        reason: "Maximum warnings exceeded",
-        warnings: this.state.warnings,
-        violations: this.state.violations,
+        reason: "Interview terminated due to security violations",
+        warnings: this.warnings,
+        violations: this.violations,
       });
     }
-
-    this.stopMonitoring();
-  }
-
-  getWarnings() {
-    return this.state.warnings;
-  }
-
-  getViolations() {
-    return this.state.violations;
-  }
-
-  getRemainingWarnings() {
-    return Math.max(0, this.options.maxWarnings - this.state.warnings.length);
   }
 
   cleanup() {
-    this.stopMonitoring();
+    if (this.detectionInterval) {
+      clearInterval(this.detectionInterval);
+    }
+
+    // Remove all event listeners
     document.removeEventListener(
       "visibilitychange",
       this.handleVisibilityChange
     );
     window.removeEventListener("blur", this.handleWindowBlur);
     window.removeEventListener("focus", this.handleWindowFocus);
+    document.removeEventListener("keydown", this.handleKeyDown, true);
+    document.removeEventListener("mouseleave", this.handleMouseLeave);
+    document.removeEventListener("contextmenu", this.handleContextMenu);
+    document.removeEventListener("copy", this.handleClipboardEvent);
+    document.removeEventListener("paste", this.handleClipboardEvent);
+    document.removeEventListener("cut", this.handleClipboardEvent);
+    window.removeEventListener("resize", this.handleWindowResize);
     window.removeEventListener("beforeunload", this.handleBeforeUnload);
+    document.removeEventListener(
+      "fullscreenchange",
+      this.handleFullscreenChange
+    );
+    document.removeEventListener(
+      "webkitfullscreenchange",
+      this.handleFullscreenChange
+    );
+    document.removeEventListener(
+      "mozfullscreenchange",
+      this.handleFullscreenChange
+    );
+    document.removeEventListener(
+      "MSFullscreenChange",
+      this.handleFullscreenChange
+    );
+
+    // Reset state
+    this.isMonitoring = false;
+    this.videoElement = null;
+    this.lastFacePosition = null;
+    Object.keys(this.violations).forEach((key) => {
+      this.violations[key] = 0;
+    });
+  }
+
+  startMonitoring(videoElement) {
+    if (!videoElement) {
+      throw new Error("Video element is required for monitoring");
+    }
+
+    if (!this.faceDetector) {
+      throw new Error(
+        "Face detector not initialized. Call initialize() first."
+      );
+    }
+
+    this.videoElement = videoElement;
+    this.isMonitoring = true;
+    this.tabFocusTime = Date.now();
+    this.lastWarningTime = Date.now();
+    this.startFaceDetection();
+
+    return true;
+  }
+
+  stopMonitoring() {
+    this.cleanup();
+    return true;
+  }
+
+  setCallback(type, callback) {
+    if (
+      typeof callback === "function" &&
+      ["onWarning", "onTerminate"].includes(type)
+    ) {
+      this.callbacks[type] = callback;
+      return true;
+    }
+    return false;
   }
 }
+
+export { InterviewMonitor };

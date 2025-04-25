@@ -1,0 +1,10 @@
+{
+  "weightsManifest": [
+    {
+      "paths": [
+        "face_detection_model-weights_manifest.json"
+      ],
+      "weights": []
+    }
+  ]
+}

@@ -11,7 +11,7 @@ export const useInterviewMonitoring = (videoRef, options = {}) => {
   useEffect(() => {
     return () => {
       if (monitorRef.current) {
-        monitorRef.current.cleanup();
+        monitorRef.current.stopMonitoring();
       }
     };
   }, []);
@@ -20,16 +20,16 @@ export const useInterviewMonitoring = (videoRef, options = {}) => {
     try {
       monitorRef.current = new InterviewMonitor({
         maxWarnings: 3,
-        warningTimeout: 10000,
+        warningTimeout: 100,
         ...options,
       });
 
-      // Set up callbacks
-      monitorRef.current.setCallbacks({
+      // Set callbacks directly on the callbacks object
+      monitorRef.current.callbacks = {
         onWarning: (warning) => {
           setWarnings((prev) => [...prev, warning]);
           toast.error(
-            `Warning ${warning.warningNumber}/${monitorRef.current.options.maxWarnings}: ${warning.reason}. ${warning.remainingWarnings} warnings remaining.`,
+            `Warning ${warning.warningNumber}/3: ${warning.reason}. ${warning.remainingWarnings} warnings remaining.`,
             {
               duration: 5000,
               icon: "⚠️",
@@ -46,9 +46,13 @@ export const useInterviewMonitoring = (videoRef, options = {}) => {
             options.onTerminate(data);
           }
         },
-      });
+      };
 
-      await monitorRef.current.initialize();
+      const initialized = await monitorRef.current.initialize();
+      if (!initialized) {
+        throw new Error("Failed to initialize monitoring system");
+      }
+
       return true;
     } catch (error) {
       console.error("Failed to initialize monitoring:", error);

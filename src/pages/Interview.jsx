@@ -34,8 +34,8 @@ const Interview = () => {
   const [timeRemaining, setTimeRemaining] = useState(ANSWER_TIME_LIMIT);
   const [isAnswering, setIsAnswering] = useState(false);
   const [bodyLanguageData, setBodyLanguageData] = useState(null);
+  const [monitoringInitialized, setMonitoringInitialized] = useState(false);
 
-  // New state variables for system checks
   const [systemChecks, setSystemChecks] = useState({
     camera: { status: "pending", message: "Checking camera access..." },
     microphone: { status: "pending", message: "Checking microphone access..." },
@@ -55,7 +55,14 @@ const Interview = () => {
     webcamRef,
     setBodyLanguageData
   );
+
   const monitoring = useInterviewMonitoring(webcamRef, {
+    maxWarnings: 3,
+    warningTimeout: 3000,
+    outOfFrameTimeout: 1500,
+    maxHeadRotation: 25,
+    maxTabUnfocusTime: 500,
+    debug: true,
     onTerminate: handleInterviewTermination,
   });
 
@@ -65,14 +72,12 @@ const Interview = () => {
       return;
     }
 
-    // Initialize all systems
     initializeSystems();
 
     if (webcamRef.current?.video) {
       webcamRef.current.video.disablePictureInPicture = true;
     }
 
-    // Prevent tab closing
     window.onbeforeunload = (e) => {
       if (!isCompleted) {
         e.preventDefault();
@@ -88,19 +93,10 @@ const Interview = () => {
 
   const initializeSystems = async () => {
     try {
-      // Check camera access
       await checkCamera();
-
-      // Check microphone access
       await checkMicrophone();
-
-      // Initialize face detection
       await initializeFaceDetection();
-
-      // Initialize pose detection
       await initializePoseDetection();
-
-      // Initialize anti-cheat
       await initializeAntiCheat();
 
       setAllChecksComplete(true);
@@ -185,13 +181,11 @@ const Interview = () => {
 
   const initializeAntiCheat = async () => {
     try {
-      await monitoring.initialize({
-        maxWarnings: 3,
-        warningTimeout: 10000,
-        outOfFrameTimeout: 5000,
-        maxHeadRotation: 45,
-        maxTabUnfocusTime: 3000,
-      });
+      const initialized = await monitoring.initialize();
+      if (!initialized) {
+        throw new Error("Failed to initialize monitoring system");
+      }
+      setMonitoringInitialized(true);
       setSystemChecks((prev) => ({
         ...prev,
         antiCheat: { status: "success", message: "Security systems ready" },
@@ -255,8 +249,21 @@ const Interview = () => {
       }
     }
 
-    toast.error("Interview terminated due to violations");
-    navigate("/dashboard");
+    toast.error("Interview terminated due to security violations", {
+      duration: 7000,
+      position: "top-center",
+      style: {
+        background: "#fee2e2",
+        color: "#dc2626",
+        fontWeight: "bold",
+        fontSize: "1.1em",
+      },
+      icon: "🚫",
+    });
+
+    setTimeout(() => {
+      navigate("/dashboard");
+    }, 2000);
   }
 
   const startInterview = async () => {
@@ -273,19 +280,26 @@ const Interview = () => {
     try {
       setLoading(true);
       setError("");
+
+      if (!monitoring.isMonitoring && monitoringInitialized) {
+        console.log("Starting interview monitoring...");
+        const monitoringStarted = await monitoring.startMonitoring();
+        if (!monitoringStarted) {
+          throw new Error("Failed to start interview monitoring");
+        }
+        console.log("Interview monitoring started successfully");
+      }
+
       const result = await interviewApi.startInterview(topic);
       setInterviewData(result.interview);
       setQuestions(result.questions);
       setCurrentQuestion(result.questions[0]);
       setResponses(new Array(result.questions.length).fill(null));
 
-      // Wait for a moment before starting speech recognition
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Read first question
       await readQuestion(result.questions[0]);
 
-      // Start speech recognition after question is read
       recognizerRef.current = speechService.startContinuousRecognition(
         (interimText) => {
           if (!speechService.isCurrentlySpeaking()) {
@@ -339,7 +353,6 @@ const Interview = () => {
     if (!transcript.trim()) return;
 
     try {
-      // Save to local state first
       const newResponses = [...responses];
       newResponses[questionIndex] = {
         question: currentQuestion,
@@ -347,7 +360,6 @@ const Interview = () => {
       };
       setResponses(newResponses);
 
-      // Submit to backend
       if (interviewData?.id) {
         await interviewApi.submitResponse(interviewData.id, {
           questionIndex,
@@ -357,7 +369,6 @@ const Interview = () => {
           },
         });
 
-        // Wait a moment to ensure the response is saved
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     } catch (error) {
@@ -381,7 +392,6 @@ const Interview = () => {
       setCurrentQuestion(nextQuestion);
       setTranscript("");
 
-      // Read next question before starting timer
       await readQuestion(nextQuestion);
       setIsAnswering(true);
     } else {
@@ -394,20 +404,15 @@ const Interview = () => {
       setLoading(true);
       cleanup();
 
-      // Save the final response
       await saveCurrentResponse();
 
-      // Wait a moment to ensure all responses are saved
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       if (interviewData?.id) {
-        // Complete the interview first
         await interviewApi.completeInterview(interviewData.id);
 
-        // Wait a moment before starting analysis
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // Start the analysis
         await interviewApi.analyzeInterview(interviewData.id);
       }
 

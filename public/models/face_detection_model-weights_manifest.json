@@ -1,0 +1,14 @@
+{
+    "weightsManifest": [
+      {
+        "paths": ["face_detection_model-shard1"],
+        "weights": [
+          {
+            "name": "conv0/filters",
+            "shape": [3, 3, 3, 32],
+            "dtype": "float32"
+          }
+        ]
+      }
+    ]
+  }
