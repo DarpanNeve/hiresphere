@@ -4,19 +4,17 @@ import * as faceDetection from "@tensorflow-models/face-detection";
 class InterviewMonitor {
   constructor(options = {}) {
     this.options = {
-      maxWarnings: options.maxWarnings || 3,
-      warningTimeout: options.warningTimeout || 10000, // Reduced from 10000
-      outOfFrameTimeout: options.outOfFrameTimeout || 1500, // Reduced from 2000
-      maxHeadRotation: options.maxHeadRotation || 25, // Reduced from 30
-      maxTabUnfocusTime: options.maxTabUnfocusTime || 500, // Reduced from 1000
-      maxFaceViolations: options.maxFaceViolations || 10, // Reduced from 3
-      detectionInterval: options.detectionInterval || 100, // Reduced from 200
+      maxWarnings: 3,
+      warningTimeout: 5000,
+      outOfFrameTimeout: 3000,
+      maxHeadRotation: 35,
+      maxTabUnfocusTime: 2000,
+      maxFaceViolations: 3,
+      detectionInterval: 200,
       ...options,
     };
 
-    // Debug mode for development
     this.debug = true;
-
     this.warnings = [];
     this.isMonitoring = false;
     this.lastWarningTime = 0;
@@ -25,7 +23,7 @@ class InterviewMonitor {
       onTerminate: null,
     };
 
-    // Detection state with reduced thresholds
+    // Detection state
     this.faceDetector = null;
     this.detectionInterval = null;
     this.videoElement = null;
@@ -34,7 +32,7 @@ class InterviewMonitor {
     this.consecutiveMultipleFacesFrames = 0;
     this.consecutiveMovementFrames = 0;
 
-    // Violation tracking with lower thresholds
+    // Violation tracking
     this.violations = {
       no_face_detected: 0,
       multiple_faces_detected: 0,
@@ -62,7 +60,7 @@ class InterviewMonitor {
       screenY: window.screenY,
     };
 
-    // Tab focus tracking with shorter timeouts
+    // Tab focus tracking
     this.tabFocusTime = Date.now();
     this.lastTabSwitchTime = Date.now();
     this.tabSwitchCount = 0;
@@ -86,12 +84,13 @@ class InterviewMonitor {
     this.handleMouseLeave = this.handleMouseLeave.bind(this);
     this.handleContextMenu = this.handleContextMenu.bind(this);
     this.handleClipboardEvent = this.handleClipboardEvent.bind(this);
+    // this.handleWindowResize = this.handleWindowResize.bind(this);
+    // this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
 
     // Initialize visibility API tracking
     this.lastVisibilityChange = Date.now();
     this.visibilityChangeCount = 0;
 
-    // Debug logging
     if (this.debug) {
       console.log("InterviewMonitor initialized with options:", this.options);
     }
@@ -99,28 +98,21 @@ class InterviewMonitor {
 
   async initialize() {
     try {
-      // Initialize TensorFlow.js with WebGL backend for better performance
       await tf.setBackend("webgl");
       await tf.ready();
 
-      // Load face detection model with optimized settings
       this.faceDetector = await faceDetection.createDetector(
         faceDetection.SupportedModels.MediaPipeFaceDetector,
         {
           runtime: "tfjs",
           refineLandmarks: true,
           maxFaces: 2,
-          scoreThreshold: 0.75,
+          scoreThreshold: 0.6,
         }
       );
 
-      // Set up event listeners
       this.setupEventListeners();
-
-      // Initialize periodic checks
       this.setupPeriodicChecks();
-
-      // Initialize fullscreen monitoring
       this.setupFullscreenMonitoring();
 
       return true;
@@ -131,30 +123,17 @@ class InterviewMonitor {
   }
 
   setupEventListeners() {
-    // Tab visibility
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
-
-    // Window focus
     window.addEventListener("blur", this.handleWindowBlur);
     window.addEventListener("focus", this.handleWindowFocus);
-
-    // Keyboard events
     document.addEventListener("keydown", this.handleKeyDown, true);
-
-    // Mouse events
     document.addEventListener("mouseleave", this.handleMouseLeave);
     document.addEventListener("contextmenu", this.handleContextMenu);
-
-    // Copy/Paste events
     document.addEventListener("copy", this.handleClipboardEvent);
     document.addEventListener("paste", this.handleClipboardEvent);
     document.addEventListener("cut", this.handleClipboardEvent);
-
-    // Window events
     window.addEventListener("resize", this.handleWindowResize);
     window.addEventListener("beforeunload", this.handleBeforeUnload);
-
-    // Fullscreen changes
     document.addEventListener(
       "fullscreenchange",
       this.handleFullscreenChange.bind(this)
@@ -173,6 +152,98 @@ class InterviewMonitor {
     );
   }
 
+  handleWindowResize() {
+    if (!this.isMonitoring) return;
+    const { width, height, screenX, screenY } = window;
+    const deltaW = Math.abs(width - this.originalWindowState.width);
+    const deltaH = Math.abs(height - this.originalWindowState.height);
+    const deltaX = Math.abs(screenX - this.originalWindowState.screenX);
+    const deltaY = Math.abs(screenY - this.originalWindowState.screenY);
+
+    // too much resize or move
+    if (deltaW > 50 || deltaH > 50 || deltaX > 20 || deltaY > 20) {
+      this.addViolation(
+        "suspicious_window_state",
+        "Please keep the window size and position unchanged"
+      );
+      // reset baseline to avoid repeated triggers
+      this.originalWindowState = { width, height, screenX, screenY };
+    }
+  }
+
+  /**
+   * Fires before unload (navigate away / refresh); warn user.
+   */
+  handleBeforeUnload(event) {
+    if (!this.isMonitoring) return;
+    this.addViolation(
+      "window_navigation",
+      "Navigation away from the interview is not allowed"
+    );
+    // Chrome requires returnValue to be set for a confirmation dialog
+    event.preventDefault();
+    event.returnValue = "";
+  }
+
+  /**
+   * Periodic check for DevTools open (rudimentary).
+   */
+  checkDevTools() {
+    const threshold = 160; // px
+    const widthDiff = window.outerWidth - window.innerWidth;
+    const heightDiff = window.outerHeight - window.innerHeight;
+    if (widthDiff > threshold || heightDiff > threshold) {
+      this.addViolation(
+        "dev_tools_detected",
+        "Developer tools are not allowed"
+      );
+    }
+  }
+
+  /**
+   * Periodic check for screen‐capture attempts.
+   */
+  checkScreenCapture() {
+    const now = Date.now();
+    // if any PrintScreen presses were seen recently (tracked in key handler), trigger here
+    if (
+      this.screenCaptureAttempts > 0 &&
+      now - this.lastScreenCaptureCheck > this.options.warningTimeout
+    ) {
+      this.addViolation(
+        "screen_recording_detected",
+        "Screen capture is not allowed"
+      );
+      this.screenCaptureAttempts = 0;
+      this.lastScreenCaptureCheck = now;
+    }
+  }
+
+  /**
+   * Periodic check that the interview tab hasn't been unfocused too long.
+   */
+  checkTabFocus() {
+    if (!document.hasFocus()) {
+      const now = Date.now();
+      const unfocusedDuration = now - this.lastTabBlurTime;
+      if (unfocusedDuration > this.options.maxTabUnfocusTime) {
+        this.addViolation(
+          "extended_tab_unfocus",
+          "Interview window focus lost for too long"
+        );
+        // reset so we don't spam
+        this.lastTabBlurTime = now;
+      }
+    }
+  }
+
+  /**
+   * Periodic check for overall window‐state anomalies.
+   */
+  checkWindowState() {
+    // Reuse handleWindowResize logic for periodic sanity check:
+    this.handleWindowResize();
+  }
   setupPeriodicChecks() {
     setInterval(() => {
       if (!this.isMonitoring) return;
@@ -183,11 +254,10 @@ class InterviewMonitor {
       this.checkTabFocus();
       this.checkVisibilityChanges();
       this.checkBrowserZoom();
-    }, 1000);
+    }, 1500);
   }
 
   setupFullscreenMonitoring() {
-    // Track fullscreen state
     this.isFullscreen = false;
     this.fullscreenChangeCount = 0;
     this.lastFullscreenChange = Date.now();
@@ -200,26 +270,25 @@ class InterviewMonitor {
       try {
         const faces = await this.faceDetector.estimateFaces(this.videoElement);
 
-        // No face detected
         if (faces.length === 0) {
           this.consecutiveNoFaceFrames++;
-          if (this.consecutiveNoFaceFrames >= 10) {
-            // Reduced threshold
-            this.addViolation("no_face_detected", "No face detected in frame");
+          if (this.consecutiveNoFaceFrames >= 15) {
+            this.addViolation(
+              "no_face_detected",
+              "Please stay within camera view"
+            );
             this.consecutiveNoFaceFrames = 0;
           }
         } else {
           this.consecutiveNoFaceFrames = 0;
         }
 
-        // Multiple faces detected
         if (faces.length > 1) {
           this.consecutiveMultipleFacesFrames++;
-          if (this.consecutiveMultipleFacesFrames >= 5) {
-            // Reduced threshold
+          if (this.consecutiveMultipleFacesFrames >= 10) {
             this.addViolation(
               "multiple_faces_detected",
-              "Multiple faces detected"
+              "Only one person should be visible"
             );
             this.consecutiveMultipleFacesFrames = 0;
           }
@@ -227,7 +296,6 @@ class InterviewMonitor {
           this.consecutiveMultipleFacesFrames = 0;
         }
 
-        // Check face movement and position
         if (faces.length === 1) {
           const face = faces[0];
           this.checkFaceMovement(face);
@@ -251,14 +319,12 @@ class InterviewMonitor {
           Math.pow(currentPosition.y - this.lastFacePosition.y, 2)
       );
 
-      if (movement > 20) {
-        // Reduced threshold
+      if (movement > 35) {
         this.consecutiveMovementFrames++;
-        if (this.consecutiveMovementFrames >= 5) {
-          // Reduced threshold
+        if (this.consecutiveMovementFrames >= 8) {
           this.addViolation(
             "excessive_movement",
-            "Excessive head movement detected"
+            "Please maintain a steady position"
           );
           this.consecutiveMovementFrames = 0;
         }
@@ -277,29 +343,27 @@ class InterviewMonitor {
     const videoWidth = this.videoElement.videoWidth;
     const videoHeight = this.videoElement.videoHeight;
 
-    // Check if face is too close or too far
     const faceSize =
       (face.box.width * face.box.height) / (videoWidth * videoHeight);
-    if (faceSize < 0.1 || faceSize > 0.5) {
-      this.addViolation(
-        "invalid_face_position",
-        "Please maintain appropriate distance from camera"
-      );
-    }
+    // if (faceSize < 0.08 || faceSize > 0.6) {
+    //   this.addViolation(
+    //     "invalid_face_position",
+    //     "Please maintain appropriate distance from camera"
+    //   );
+    // }
 
-    // Check if face is centered
     const centerX = face.box.xCenter || face.box.xMin + face.box.width / 2;
     const centerY = face.box.yCenter || face.box.yMin + face.box.height / 2;
 
     const offsetX = Math.abs(centerX - videoWidth / 2) / videoWidth;
     const offsetY = Math.abs(centerY - videoHeight / 2) / videoHeight;
 
-    if (offsetX > 0.3 || offsetY > 0.3) {
-      this.addViolation(
-        "face_not_centered",
-        "Please center your face in the frame"
-      );
-    }
+    // if (offsetX > 0.4 || offsetY > 0.4) {
+    //   this.addViolation(
+    //     "face_not_centered",
+    //     "Please center yourself in the frame"
+    //   );
+    // }
   }
 
   handleVisibilityChange() {
@@ -315,17 +379,14 @@ class InterviewMonitor {
         );
       }
 
-      // More aggressive visibility change detection
-      if (this.visibilityChangeCount >= 2) {
-        // Reduced from 3
+      if (this.visibilityChangeCount >= 3) {
         this.addViolation(
           "excessive_tab_switching",
-          "Multiple tab switches detected"
+          "Please stay focused on the interview"
         );
         this.visibilityChangeCount = 0;
       }
 
-      // Track time hidden
       this.lastVisibilityChange = now;
     }
   }
@@ -341,12 +402,10 @@ class InterviewMonitor {
       console.log(`Window blur detected (${this.tabBlurCount})`);
     }
 
-    // More aggressive blur detection
-    if (this.tabBlurCount >= 2) {
-      // Reduced from 3
+    if (this.tabBlurCount >= 3) {
       this.addViolation(
         "window_focus_lost",
-        "Window focus lost multiple times"
+        "Please maintain focus on the interview window"
       );
       this.tabBlurCount = 0;
     }
@@ -355,7 +414,7 @@ class InterviewMonitor {
     if (blurDuration > this.options.maxTabUnfocusTime) {
       this.addViolation(
         "extended_tab_unfocus",
-        "Window focus lost for too long"
+        "Interview window focus lost for too long"
       );
     }
   }
@@ -377,19 +436,13 @@ class InterviewMonitor {
     if (!this.isMonitoring) return;
 
     const now = Date.now();
-    const blockedKeys = ["Tab", "PrintScreen", "F12", "F11", "Escape"];
+    const blockedKeys = ["PrintScreen", "F12", "F11"];
     const blockedCombos = [
-      { key: "c", ctrl: true },
-      { key: "v", ctrl: true },
       { key: "p", ctrl: true },
-      { key: "i", ctrl: true },
-      { key: "u", ctrl: true },
       { key: "s", ctrl: true },
       { key: "r", ctrl: true },
-      { key: "j", ctrl: true },
     ];
 
-    // Track key press history
     this.keyPressHistory.push({
       key: event.key,
       timestamp: now,
@@ -398,9 +451,8 @@ class InterviewMonitor {
       shift: event.shiftKey,
     });
 
-    // Keep only recent history
     this.keyPressHistory = this.keyPressHistory.filter(
-      (press) => now - press.timestamp < 1000
+      (press) => now - press.timestamp < 1500
     );
 
     if (this.debug) {
@@ -409,37 +461,32 @@ class InterviewMonitor {
       );
     }
 
-    // Check for blocked keys
     if (blockedKeys.includes(event.key)) {
       event.preventDefault();
       this.addViolation(
         "blocked_key_press",
-        `Blocked key pressed: ${event.key}`
+        `This key is not allowed during the interview`
       );
       return;
     }
 
-    // Check for blocked combinations
     for (const combo of blockedCombos) {
       if (event.key.toLowerCase() === combo.key && event.ctrlKey) {
         event.preventDefault();
         this.addViolation(
           "blocked_key_combination",
-          `Blocked combination: Ctrl+${combo.key}`
+          `This keyboard shortcut is not allowed`
         );
         return;
       }
     }
 
-    // Detect rapid key pressing
-    if (this.keyPressHistory.length >= 5) {
-      // Reduced from 10
+    if (this.keyPressHistory.length >= 10) {
       const timeSpan = now - this.keyPressHistory[0].timestamp;
       if (timeSpan < 1000) {
-        // 1 second window
         this.addViolation(
           "rapid_key_pressing",
-          "Suspicious rapid key pressing"
+          "Unusual keyboard activity detected"
         );
         this.keyPressHistory = [];
       }
@@ -449,20 +496,29 @@ class InterviewMonitor {
   handleClipboardEvent(event) {
     if (this.isMonitoring) {
       event.preventDefault();
-      this.addViolation("clipboard_operation", "Clipboard operation attempted");
+      this.addViolation(
+        "clipboard_operation",
+        "Clipboard operations are not allowed during the interview"
+      );
     }
   }
 
   handleContextMenu(event) {
     if (this.isMonitoring) {
       event.preventDefault();
-      this.addViolation("context_menu", "Right-click menu attempted");
+      this.addViolation(
+        "context_menu",
+        "Right-click menu is disabled during the interview"
+      );
     }
   }
 
   handleMouseLeave(event) {
-    if (this.isMonitoring && event.clientY <= 0) {
-      this.addViolation("mouse_leave", "Mouse left the window");
+    if (this.isMonitoring && event.clientY <= -25) {
+      this.addViolation(
+        "mouse_leave",
+        "Please keep your cursor within the interview window"
+      );
     }
   }
 
@@ -479,8 +535,11 @@ class InterviewMonitor {
 
     if (this.isFullscreen !== isCurrentlyFullscreen) {
       this.fullscreenChangeCount++;
-      if (this.fullscreenChangeCount >= 3) {
-        this.addViolation("fullscreen_toggle", "Excessive fullscreen toggling");
+      if (this.fullscreenChangeCount >= 4) {
+        this.addViolation(
+          "fullscreen_toggle",
+          "Please maintain a consistent view mode"
+        );
       }
     }
 
@@ -490,20 +549,20 @@ class InterviewMonitor {
 
   checkBrowserZoom() {
     const zoom = Math.round((window.outerWidth / window.innerWidth) * 100);
-    if (zoom !== 100) {
-      this.addViolation("browser_zoom", "Browser zoom level changed");
+    if (zoom < 75 || zoom > 125) {
+      this.addViolation("browser_zoom", "Please maintain standard zoom level");
     }
   }
 
   checkVisibilityChanges() {
     const now = Date.now();
     if (
-      this.visibilityChangeCount > 5 &&
-      now - this.lastVisibilityChange < 10000
+      this.visibilityChangeCount > 8 &&
+      now - this.lastVisibilityChange < 20000
     ) {
       this.addViolation(
         "suspicious_visibility_changes",
-        "Suspicious tab visibility changes"
+        "Excessive window switching detected"
       );
       this.visibilityChangeCount = 0;
     }
@@ -512,8 +571,7 @@ class InterviewMonitor {
   addViolation(type, details = "") {
     const now = Date.now();
 
-    // Reduced cooldown between violations
-    if (now - this.lastWarningTime < 1000) return; // Reduced from 3000
+    if (now - this.lastWarningTime < 3000) return;
 
     if (this.violations[type] === undefined) {
       this.violations[type] = 0;
@@ -528,10 +586,8 @@ class InterviewMonitor {
       );
     }
 
-    // More aggressive violation handling
-    if (this.violations[type] >= 2) {
-      // Reduced from 3
-      this.addWarning(`${details || `Security violation detected: ${type}`}`);
+    if (this.violations[type] >= 3) {
+      this.addWarning(`${details || `Interview protocol violation: ${type}`}`);
     }
 
     this.lastWarningTime = now;
@@ -557,7 +613,6 @@ class InterviewMonitor {
       this.callbacks.onWarning(warning);
     }
 
-    // Check for termination with more aggressive threshold
     if (this.warnings.length >= this.options.maxWarnings) {
       if (this.debug) {
         console.log("Maximum warnings reached, terminating interview");
@@ -572,7 +627,7 @@ class InterviewMonitor {
 
     if (this.callbacks.onTerminate) {
       this.callbacks.onTerminate({
-        reason: "Interview terminated due to security violations",
+        reason: "Interview terminated due to multiple protocol violations",
         warnings: this.warnings,
         violations: this.violations,
       });
@@ -584,7 +639,6 @@ class InterviewMonitor {
       clearInterval(this.detectionInterval);
     }
 
-    // Remove all event listeners
     document.removeEventListener(
       "visibilitychange",
       this.handleVisibilityChange
@@ -616,7 +670,6 @@ class InterviewMonitor {
       this.handleFullscreenChange
     );
 
-    // Reset state
     this.isMonitoring = false;
     this.videoElement = null;
     this.lastFacePosition = null;
