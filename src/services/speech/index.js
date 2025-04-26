@@ -1,9 +1,14 @@
 class SpeechService {
   constructor() {
+    console.log("[SpeechService] Initializing speech service");
+
     if (
       !("webkitSpeechRecognition" in window) &&
       !("SpeechRecognition" in window)
     ) {
+      console.error(
+        "[SpeechService] Speech recognition not supported in this browser"
+      );
       throw new Error("Speech recognition is not supported in this browser");
     }
 
@@ -13,135 +18,213 @@ class SpeechService {
     this.recognition.continuous = false;
     this.recognition.interimResults = true;
     this.recognition.lang = "en-US";
-
-    // Add noise handling settings
     this.recognition.maxAlternatives = 1;
+
+    console.log("[SpeechService] Speech recognition configured with:", {
+      continuous: this.recognition.continuous,
+      interimResults: this.recognition.interimResults,
+      lang: this.recognition.lang,
+      maxAlternatives: this.recognition.maxAlternatives,
+    });
 
     this.synthesis = window.speechSynthesis;
     this.voices = [];
     this.isSpeaking = false;
     this.isRecognizing = false;
-    this.hasRecordingPermission = null; // Track microphone permission status
+    this.isTransitioning = false;
+    this.hasRecordingPermission = null;
     this.processedResults = new Set();
-    this.noiseThreshold = 0.7;
+    this.noiseThreshold = 0.5;
     this.audioContext = null;
     this.audioStream = null;
+    this.restartTimeout = null;
+    this.silenceTimeout = null;
+    this.lastSpeechTime = Date.now();
 
-    // Pre-load voices
+    console.log("[SpeechService] Initial state configured");
+
     this.loadVoices();
     if (this.synthesis.onvoiceschanged !== undefined) {
+      console.log("[SpeechService] Setting up onvoiceschanged listener");
       this.synthesis.onvoiceschanged = () => this.loadVoices();
     }
   }
 
   loadVoices() {
+    console.log("[SpeechService] Loading available voices");
     this.voices = this.synthesis.getVoices();
-    // Pre-select preferred voice
+    console.log(`[SpeechService] Found ${this.voices.length} voices`);
+
     this.preferredVoice =
       this.voices.find(
         (voice) => voice.lang.includes("en") && voice.name.includes("Google")
       ) || this.voices.find((voice) => voice.lang.includes("en"));
+
+    if (this.preferredVoice) {
+      console.log(
+        `[SpeechService] Selected preferred voice: ${this.preferredVoice.name} (${this.preferredVoice.lang})`
+      );
+    } else {
+      console.warn("[SpeechService] No preferred English voice found");
+    }
   }
 
   async speakText(text) {
+    console.log(
+      `[SpeechService] Speaking text: "${text.substring(0, 50)}${
+        text.length > 50 ? "..." : ""
+      }"`
+    );
+
     return new Promise((resolve, reject) => {
       try {
-        // Cancel any ongoing speech
+        console.log("[SpeechService] Canceling any ongoing speech");
         this.synthesis.cancel();
         this.isSpeaking = true;
+        console.log("[SpeechService] isSpeaking set to true");
 
         const utterance = new SpeechSynthesisUtterance(text);
-
         if (this.preferredVoice) {
           utterance.voice = this.preferredVoice;
+          console.log(
+            `[SpeechService] Using voice: ${this.preferredVoice.name}`
+          );
+        } else {
+          console.log(
+            "[SpeechService] Using default voice (no preferred voice set)"
+          );
         }
 
-        // Optimize speech parameters
-        utterance.rate = 1.1; // Slightly faster
+        utterance.rate = 1.1;
         utterance.pitch = 1;
         utterance.volume = 1;
 
+        console.log("[SpeechService] Utterance configured with:", {
+          rate: utterance.rate,
+          pitch: utterance.pitch,
+          volume: utterance.volume,
+        });
+
         utterance.onend = () => {
+          console.log("[SpeechService] Speech completed");
           this.isSpeaking = false;
-          // Add small delay before resolving
+          console.log("[SpeechService] isSpeaking set to false");
+          console.log(
+            "[SpeechService] Resolving promise after speech completed (with 300ms delay)"
+          );
           setTimeout(resolve, 300);
         };
 
         utterance.onerror = (error) => {
+          console.error("[SpeechService] Speech synthesis error:", error);
           this.isSpeaking = false;
+          console.log("[SpeechService] isSpeaking set to false due to error");
           reject(error);
         };
 
+        console.log("[SpeechService] Starting speech synthesis");
         this.synthesis.speak(utterance);
       } catch (error) {
+        console.error("[SpeechService] Error in speakText:", error);
         this.isSpeaking = false;
+        console.log("[SpeechService] isSpeaking set to false due to exception");
         reject(error);
       }
     });
   }
 
-  // Check and request microphone permissions explicitly
   async checkMicrophonePermission() {
+    console.log("[SpeechService] Checking microphone permission");
+
     try {
       if (this.hasRecordingPermission === true) {
+        console.log("[SpeechService] Microphone permission already granted");
         return true;
       }
 
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("[SpeechService] Requesting microphone access");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      console.log("[SpeechService] Microphone access granted");
 
-      // Test that we're actually getting audio data
       if (!this.audioContext) {
+        console.log("[SpeechService] Creating new AudioContext");
         this.audioContext = new (window.AudioContext ||
           window.webkitAudioContext)();
+        console.log(
+          "[SpeechService] AudioContext created, state:",
+          this.audioContext.state
+        );
       }
 
-      // Create analyzer to check audio levels
+      console.log("[SpeechService] Setting up audio analyzer");
       const analyser = this.audioContext.createAnalyser();
       const microphone = this.audioContext.createMediaStreamSource(stream);
       microphone.connect(analyser);
+      console.log("[SpeechService] Audio analyzer connected");
 
-      // Keep track of the stream for cleanup
       this.audioStream = stream;
       this.hasRecordingPermission = true;
+      console.log(
+        "[SpeechService] Audio stream saved and permission flag set to true"
+      );
 
       return true;
     } catch (error) {
-      console.error("Microphone permission error:", error);
+      console.error("[SpeechService] Microphone permission error:", error);
       this.hasRecordingPermission = false;
+      console.log("[SpeechService] Permission flag set to false due to error");
       return false;
     }
   }
 
-  // Monitor audio input levels to detect if microphone is working
   startAudioLevelMonitoring(onAudioDetected) {
-    if (!this.audioContext || !this.audioStream) return;
+    console.log("[SpeechService] Starting audio level monitoring");
 
+    if (!this.audioContext || !this.audioStream) {
+      console.warn(
+        "[SpeechService] Cannot start audio monitoring: audioContext or audioStream not available"
+      );
+      return;
+    }
+
+    console.log("[SpeechService] Creating analyzer for audio monitoring");
     const analyser = this.audioContext.createAnalyser();
     const microphone = this.audioContext.createMediaStreamSource(
       this.audioStream
     );
     microphone.connect(analyser);
 
-    analyser.fftSize = 256;
+    analyser.fftSize = 1024;
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
+    console.log(
+      `[SpeechService] Analyzer configured with fftSize=${analyser.fftSize}, bufferLength=${bufferLength}`
+    );
 
     const checkAudioLevel = () => {
-      if (!this.isRecognizing) return;
+      if (!this.isRecognizing) {
+        console.log(
+          "[SpeechService] Audio monitoring stopped: not recognizing"
+        );
+        return;
+      }
 
       analyser.getByteFrequencyData(dataArray);
-
-      // Calculate average audio level
       let sum = 0;
       for (let i = 0; i < bufferLength; i++) {
         sum += dataArray[i];
       }
       const average = sum / bufferLength;
 
-      // If we detect audio but no speech is being recognized,
-      // the microphone might be working but recognition is failing
-      if (average > 10 && onAudioDetected) {
+      if (average > 5 && onAudioDetected) {
+        this.lastSpeechTime = Date.now();
+        // console.log(`[SpeechService] Audio detected: level=${average.toFixed(2)}`); // Uncomment for verbose logging
         onAudioDetected(average);
       }
 
@@ -150,6 +233,7 @@ class SpeechService {
       }
     };
 
+    console.log("[SpeechService] Starting audio level check loop");
     checkAudioLevel();
   }
 
@@ -158,187 +242,427 @@ class SpeechService {
     onFinalResult,
     onAudioLevel
   ) {
+    console.log("[SpeechService] Starting continuous recognition");
+
     try {
-      // First check microphone permission
+      console.log("[SpeechService] Checking microphone permission");
       const hasPermission = await this.checkMicrophonePermission();
       if (!hasPermission) {
-        throw new Error(
-          "Microphone permission denied. Speech recognition requires microphone access."
-        );
+        console.error("[SpeechService] Microphone permission denied");
+        throw new Error("Microphone permission denied");
       }
 
-      // Stop any existing recognition
+      // Don't start again if already recognizing or in transition
       if (this.isRecognizing) {
-        this.stopContinuousRecognition();
-        // Add a small delay before restarting
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        console.log(
+          "[SpeechService] Recognition already active, will not start again"
+        );
+        return {
+          isActive: () => this.isRecognizing,
+          stop: () => this.stopContinuousRecognition(),
+        };
       }
 
-      this.processedResults.clear(); // Reset processed results
-      let silenceTimer = null;
-      const SILENCE_TIMEOUT = 1500; // Milliseconds of silence before restarting
-      let consecutiveEmptyResults = 0;
+      if (this.isTransitioning) {
+        console.log(
+          "[SpeechService] Recognition currently transitioning, will not start again"
+        );
+        return {
+          isActive: () => this.isRecognizing,
+          stop: () => this.stopContinuousRecognition(),
+        };
+      }
 
-      // Start monitoring audio levels
+      console.log("[SpeechService] Cleaning up previous recognition session");
+      this.cleanup();
+      this.processedResults.clear();
+      console.log("[SpeechService] Processed results cleared");
+
+      this.isTransitioning = true;
+      console.log("[SpeechService] isTransitioning set to true");
+
+      console.log("[SpeechService] Starting audio level monitoring");
       this.startAudioLevelMonitoring((level) => {
-        if (onAudioLevel) onAudioLevel(level);
+        if (onAudioLevel) {
+          // console.log(`[SpeechService] Audio level: ${level.toFixed(2)}`); // Uncomment for verbose logging
+          onAudioLevel(level);
+        }
       });
 
+      console.log("[SpeechService] Setting up recognition event handlers");
+
       this.recognition.onstart = () => {
+        console.log("[SpeechService] Recognition STARTED");
         this.isRecognizing = true;
-        console.log("Speech recognition started");
+        console.log("[SpeechService] isRecognizing set to true");
+        this.isTransitioning = false;
+        console.log("[SpeechService] isTransitioning set to false");
+        this.lastSpeechTime = Date.now();
       };
 
       this.recognition.onresult = (event) => {
-        if (this.isSpeaking) return;
-
-        // Clear any pending silence timer
-        if (silenceTimer) {
-          clearTimeout(silenceTimer);
-          silenceTimer = null;
+        if (this.isSpeaking) {
+          console.log(
+            "[SpeechService] Ignoring recognition result because system is speaking"
+          );
+          return;
         }
 
         const result = event.results[event.results.length - 1];
         const transcript = result[0].transcript.trim();
-        const confidence = result[0].confidence;
-        const isConfident = confidence > this.noiseThreshold;
 
-        // Skip if result is likely noise (low confidence)
         if (!transcript) {
-          consecutiveEmptyResults++;
-          if (consecutiveEmptyResults > 3) {
-            // If we get multiple empty results, try restarting
-            this.restartRecognition();
-            consecutiveEmptyResults = 0;
-          }
+          console.log("[SpeechService] Empty transcript, ignoring");
           return;
-        } else {
-          consecutiveEmptyResults = 0;
         }
 
-        // Handle interim and final results
+        this.lastSpeechTime = Date.now();
+        console.log("[SpeechService] Updated lastSpeechTime");
+
         if (!result.isFinal) {
-          if (onInterimResult && transcript && isConfident) {
+          console.log(`[SpeechService] Interim result: "${transcript}"`);
+          if (onInterimResult && transcript) {
             onInterimResult(transcript);
           }
         } else {
-          // Ensure we don't process the same final result multiple times
+          console.log(`[SpeechService] Final result: "${transcript}"`);
           const resultKey = transcript.toLowerCase();
-          if (!this.processedResults.has(resultKey) && isConfident) {
+          if (!this.processedResults.has(resultKey)) {
+            console.log("[SpeechService] New unique result, processing");
             this.processedResults.add(resultKey);
+            console.log(
+              `[SpeechService] Result added to processed set (${this.processedResults.size} total)`
+            );
             if (onFinalResult) {
               onFinalResult(transcript);
             }
+          } else {
+            console.log("[SpeechService] Duplicate result, ignoring");
           }
         }
       };
 
       this.recognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
+        console.error(
+          `[SpeechService] Recognition ERROR: ${event.error}`,
+          event
+        );
 
-        // Don't restart if we're not supposed to be recognizing
-        if (!this.isRecognizing || this.isSpeaking) return;
+        if (!this.isRecognizing || this.isSpeaking) {
+          console.log(
+            "[SpeechService] Not handling error because not recognizing or is speaking"
+          );
+          return;
+        }
 
-        switch (event.error) {
-          case "no-speech":
-            // Only restart after a brief pause
-            setTimeout(() => this.restartRecognition(), 1000);
-            break;
-          case "audio-capture":
-            // Major problem with audio capture device
-            this.reinitializeAudioCapture().then(() => {
-              if (this.isRecognizing && !this.isSpeaking) {
-                this.restartRecognition();
-              }
-            });
-            break;
-          case "network":
-            // Wait longer for network issues
-            setTimeout(() => this.restartRecognition(), 3000);
-            break;
-          default:
-            // For other errors, try a simple restart if appropriate
-            setTimeout(() => this.restartRecognition(), 1000);
+        if (event.error === "no-speech") {
+          console.log("[SpeechService] No speech detected, attempting restart");
+          this.restartRecognition();
+        } else if (event.error === "aborted" || event.error === "network") {
+          console.log("[SpeechService] Critical error, stopping recognition");
+          this.isTransitioning = false;
+          console.log(
+            "[SpeechService] isTransitioning set to false due to critical error"
+          );
+          this.isRecognizing = false;
+          console.log(
+            "[SpeechService] isRecognizing set to false due to critical error"
+          );
+        } else {
+          console.log("[SpeechService] Other error, will handle in onend");
         }
       };
 
       this.recognition.onend = () => {
-        // Only restart if we're still actively recognizing and not speaking
-        if (this.isRecognizing && !this.isSpeaking) {
-          // Start a silence timer - only restart after a short pause
-          silenceTimer = setTimeout(() => {
-            this.restartRecognition();
-          }, SILENCE_TIMEOUT);
+        console.log("[SpeechService] Recognition ENDED");
+        console.log("[SpeechService] State at end:", {
+          isRecognizing: this.isRecognizing,
+          isSpeaking: this.isSpeaking,
+          isTransitioning: this.isTransitioning,
+        });
+
+        // Only try to restart if we're still supposed to be recognizing
+        // and not already in transition
+        if (this.isRecognizing && !this.isSpeaking && !this.isTransitioning) {
+          console.log(
+            "[SpeechService] Recognition ended while active, attempting restart"
+          );
+          this.restartRecognition();
+        } else {
+          console.log(
+            "[SpeechService] Recognition ended normally, not restarting"
+          );
+          this.isTransitioning = false;
+          console.log("[SpeechService] isTransitioning set to false at end");
         }
       };
 
-      // Start recognition
+      // Start initial recognition
+      console.log("[SpeechService] Calling recognition.start()");
       this.isRecognizing = true;
-      this.recognition.start();
+      console.log("[SpeechService] isRecognizing set to true before starting");
 
+      try {
+        this.recognition.start();
+        console.log("[SpeechService] Recognition start() called successfully");
+      } catch (err) {
+        console.error("[SpeechService] Error starting recognition:", err);
+        this.isRecognizing = false;
+        console.log(
+          "[SpeechService] isRecognizing reset to false due to start exception"
+        );
+        this.isTransitioning = false;
+        console.log(
+          "[SpeechService] isTransitioning reset to false due to start exception"
+        );
+        throw err;
+      }
+
+      // Set up silence detection
+      console.log("[SpeechService] Setting up silence detection");
+      this.setupSilenceDetection();
+
+      console.log(
+        "[SpeechService] Continuous recognition started successfully"
+      );
       return {
-        isActive: () => this.isRecognizing,
-        stop: () => this.stopContinuousRecognition(),
+        isActive: () => {
+          const active = this.isRecognizing;
+          console.log(
+            `[SpeechService] isActive() called, returning: ${active}`
+          );
+          return active;
+        },
+        stop: () => {
+          console.log(
+            "[SpeechService] stop() called through returned controller"
+          );
+          return this.stopContinuousRecognition();
+        },
       };
     } catch (error) {
-      console.error("Failed to start speech recognition:", error);
+      console.error(
+        "[SpeechService] Failed to start speech recognition:",
+        error
+      );
       this.isRecognizing = false;
+      console.log(
+        "[SpeechService] isRecognizing set to false due to exception"
+      );
+      this.isTransitioning = false;
+      console.log(
+        "[SpeechService] isTransitioning set to false due to exception"
+      );
       throw error;
     }
   }
 
-  async reinitializeAudioCapture() {
-    // Clean up existing resources
-    if (this.audioStream) {
-      this.audioStream.getTracks().forEach((track) => track.stop());
-      this.audioStream = null;
-    }
+  setupSilenceDetection() {
+    console.log("[SpeechService] Setting up silence detection");
 
-    // Try to get fresh permissions
-    this.hasRecordingPermission = null;
-    return this.checkMicrophonePermission();
+    const checkSilence = () => {
+      if (!this.isRecognizing) {
+        console.log(
+          "[SpeechService] Silence detection stopped: not recognizing"
+        );
+        return;
+      }
+
+      if (this.isSpeaking) {
+        console.log(
+          "[SpeechService] Silence detection paused: system is speaking"
+        );
+        if (this.isRecognizing) {
+          this.silenceTimeout = setTimeout(checkSilence, 500);
+        }
+        return;
+      }
+
+      const silenceDuration = Date.now() - this.lastSpeechTime;
+      console.log(`[SpeechService] Silence duration: ${silenceDuration}ms`);
+
+      if (silenceDuration > 1000) {
+        // 1 second of silence
+        console.log(
+          "[SpeechService] Silence threshold exceeded, restarting recognition"
+        );
+        this.restartRecognition();
+      }
+
+      if (this.isRecognizing) {
+        this.silenceTimeout = setTimeout(checkSilence, 500);
+      }
+    };
+
+    console.log("[SpeechService] Starting silence detection loop");
+    this.silenceTimeout = setTimeout(checkSilence, 500);
   }
 
   restartRecognition() {
-    if (!this.isRecognizing || this.isSpeaking) return;
+    console.log("[SpeechService] Attempting to restart recognition");
+    console.log("[SpeechService] Current state:", {
+      isRecognizing: this.isRecognizing,
+      isSpeaking: this.isSpeaking,
+      isTransitioning: this.isTransitioning,
+    });
+
+    if (!this.isRecognizing) {
+      console.log("[SpeechService] Not restarting: not currently recognizing");
+      return;
+    }
+
+    if (this.isSpeaking) {
+      console.log("[SpeechService] Not restarting: currently speaking");
+      return;
+    }
+
+    if (this.isTransitioning) {
+      console.log("[SpeechService] Not restarting: already transitioning");
+      return;
+    }
+
+    this.isTransitioning = true;
+    console.log("[SpeechService] isTransitioning set to true for restart");
 
     try {
-      // Make sure recognition is reset before restarting
-      this.recognition.abort();
-      setTimeout(() => {
+      console.log("[SpeechService] Calling recognition.stop() for restart");
+      this.recognition.stop();
+      console.log("[SpeechService] recognition.stop() called successfully");
+
+      console.log(
+        "[SpeechService] Setting timeout for 300ms to restart recognition"
+      );
+      this.restartTimeout = setTimeout(() => {
+        console.log("[SpeechService] Restart timeout triggered");
+        console.log("[SpeechService] Restart state check:", {
+          isRecognizing: this.isRecognizing,
+          isSpeaking: this.isSpeaking,
+          isTransitioning: this.isTransitioning,
+        });
+
         if (this.isRecognizing && !this.isSpeaking) {
-          this.recognition.start();
+          try {
+            console.log(
+              "[SpeechService] Calling recognition.start() for restart"
+            );
+            this.recognition.start();
+            console.log(
+              "[SpeechService] recognition.start() called successfully for restart"
+            );
+          } catch (error) {
+            console.error(
+              "[SpeechService] Error starting recognition during restart:",
+              error
+            );
+            this.isTransitioning = false;
+            console.log(
+              "[SpeechService] isTransitioning reset to false due to restart error"
+            );
+
+            if (error.name === "InvalidStateError") {
+              console.log(
+                "[SpeechService] InvalidStateError detected, recognition may already be running"
+              );
+              console.log(
+                "[SpeechService] Setting isRecognizing to false to reset state"
+              );
+              this.isRecognizing = false;
+            }
+          }
+        } else {
+          console.log(
+            "[SpeechService] Not restarting: conditions changed during timeout"
+          );
+          this.isTransitioning = false;
+          console.log(
+            "[SpeechService] isTransitioning reset to false due to changed conditions"
+          );
         }
-      }, 500); // Increased delay to ensure proper cleanup
+      }, 300); // Increased delay for safer restart
     } catch (error) {
-      console.error("Failed to restart speech recognition:", error);
-      this.isRecognizing = false;
+      console.error("[SpeechService] Error during recognition restart:", error);
+      this.isTransitioning = false;
+      console.log(
+        "[SpeechService] isTransitioning reset to false due to error"
+      );
     }
+  }
+
+  cleanup() {
+    console.log("[SpeechService] Cleaning up resources");
+
+    if (this.restartTimeout) {
+      console.log("[SpeechService] Clearing restart timeout");
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
+
+    if (this.silenceTimeout) {
+      console.log("[SpeechService] Clearing silence timeout");
+      clearTimeout(this.silenceTimeout);
+      this.silenceTimeout = null;
+    }
+
+    if (this.recognition) {
+      try {
+        console.log("[SpeechService] Stopping recognition during cleanup");
+        this.recognition.stop();
+        console.log(
+          "[SpeechService] Recognition stopped successfully during cleanup"
+        );
+      } catch (error) {
+        console.log(
+          "[SpeechService] Error stopping recognition during cleanup (this is often normal):",
+          error
+        );
+        // Ignore errors during cleanup
+      }
+    }
+
+    console.log("[SpeechService] Cleanup completed");
   }
 
   stopContinuousRecognition() {
+    console.log("[SpeechService] Stopping continuous recognition");
     this.isRecognizing = false;
-    try {
-      this.recognition.abort(); // Use abort() instead of stop() for immediate effect
-    } catch (error) {
-      // Ignore errors when stopping
-      console.log("Recognition already stopped");
+    console.log("[SpeechService] isRecognizing set to false");
+
+    console.log("[SpeechService] Running cleanup");
+    this.cleanup();
+
+    if (this.audioStream) {
+      console.log("[SpeechService] Stopping audio tracks");
+      this.audioStream.getTracks().forEach((track) => {
+        console.log(
+          `[SpeechService] Stopping audio track: ${track.kind}, enabled=${track.enabled}, readyState=${track.readyState}`
+        );
+        track.stop();
+      });
+      console.log("[SpeechService] All audio tracks stopped");
+    } else {
+      console.log("[SpeechService] No audio stream to stop");
     }
 
-    // Cleanup audio monitoring
-    if (this.audioStream) {
-      this.audioStream.getTracks().forEach((track) => track.stop());
-    }
+    console.log("[SpeechService] Continuous recognition stopped successfully");
   }
 
   isCurrentlySpeaking() {
-    return this.isSpeaking;
+    const speaking = this.isSpeaking;
+    console.log(
+      `[SpeechService] isCurrentlySpeaking() called, returning: ${speaking}`
+    );
+    return speaking;
   }
 
   setNoiseThreshold(threshold) {
-    // Allow adjusting the noise filtering threshold (0.0 to 1.0)
+    console.log(`[SpeechService] Setting noise threshold to: ${threshold}`);
     if (threshold >= 0 && threshold <= 1) {
       this.noiseThreshold = threshold;
+      console.log(`[SpeechService] Noise threshold set to ${threshold}`);
+    } else {
+      console.warn(
+        `[SpeechService] Invalid noise threshold value: ${threshold}, must be between 0 and 1`
+      );
     }
   }
 }
