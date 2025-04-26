@@ -1,3 +1,5 @@
+// SpeechService.js
+
 class SpeechService {
   constructor() {
     console.log("[SpeechService] Initializing speech service");
@@ -15,8 +17,10 @@ class SpeechService {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     this.recognition = new SpeechRecognition();
-    this.recognition.continuous = false;
-    this.recognition.interimResults = true;
+
+    // ← ENABLE TRUE CONTINUOUS LISTENING
+    this.recognition.continuous = true;
+    this.recognition.interimResults = false;
     this.recognition.lang = "en-US";
     this.recognition.maxAlternatives = 1;
 
@@ -224,7 +228,6 @@ class SpeechService {
 
       if (average > 5 && onAudioDetected) {
         this.lastSpeechTime = Date.now();
-        // console.log(`[SpeechService] Audio detected: level=${average.toFixed(2)}`); // Uncomment for verbose logging
         onAudioDetected(average);
       }
 
@@ -252,20 +255,9 @@ class SpeechService {
         throw new Error("Microphone permission denied");
       }
 
-      // Don't start again if already recognizing or in transition
-      if (this.isRecognizing) {
+      if (this.isRecognizing || this.isTransitioning) {
         console.log(
-          "[SpeechService] Recognition already active, will not start again"
-        );
-        return {
-          isActive: () => this.isRecognizing,
-          stop: () => this.stopContinuousRecognition(),
-        };
-      }
-
-      if (this.isTransitioning) {
-        console.log(
-          "[SpeechService] Recognition currently transitioning, will not start again"
+          "[SpeechService] Recognition already active or transitioning"
         );
         return {
           isActive: () => this.isRecognizing,
@@ -284,7 +276,6 @@ class SpeechService {
       console.log("[SpeechService] Starting audio level monitoring");
       this.startAudioLevelMonitoring((level) => {
         if (onAudioLevel) {
-          // console.log(`[SpeechService] Audio level: ${level.toFixed(2)}`); // Uncomment for verbose logging
           onAudioLevel(level);
         }
       });
@@ -321,15 +312,15 @@ class SpeechService {
 
         if (!result.isFinal) {
           console.log(`[SpeechService] Interim result: "${transcript}"`);
-          if (onInterimResult && transcript) {
+          if (onInterimResult) {
             onInterimResult(transcript);
           }
         } else {
           console.log(`[SpeechService] Final result: "${transcript}"`);
-          const resultKey = transcript.toLowerCase();
-          if (!this.processedResults.has(resultKey)) {
+          const key = transcript.toLowerCase();
+          if (!this.processedResults.has(key)) {
             console.log("[SpeechService] New unique result, processing");
-            this.processedResults.add(resultKey);
+            this.processedResults.add(key);
             console.log(
               `[SpeechService] Result added to processed set (${this.processedResults.size} total)`
             );
@@ -356,20 +347,11 @@ class SpeechService {
         }
 
         if (event.error === "no-speech") {
-          console.log("[SpeechService] No speech detected, attempting restart");
-          this.restartRecognition();
+          console.log("[SpeechService] No speech detected; continuing");
         } else if (event.error === "aborted" || event.error === "network") {
           console.log("[SpeechService] Critical error, stopping recognition");
           this.isTransitioning = false;
-          console.log(
-            "[SpeechService] isTransitioning set to false due to critical error"
-          );
           this.isRecognizing = false;
-          console.log(
-            "[SpeechService] isRecognizing set to false due to critical error"
-          );
-        } else {
-          console.log("[SpeechService] Other error, will handle in onend");
         }
       };
 
@@ -380,65 +362,22 @@ class SpeechService {
           isSpeaking: this.isSpeaking,
           isTransitioning: this.isTransitioning,
         });
-
-        // Only try to restart if we're still supposed to be recognizing
-        // and not already in transition
-        if (this.isRecognizing && !this.isSpeaking && !this.isTransitioning) {
-          console.log(
-            "[SpeechService] Recognition ended while active, attempting restart"
-          );
-          this.restartRecognition();
-        } else {
-          console.log(
-            "[SpeechService] Recognition ended normally, not restarting"
-          );
-          this.isTransitioning = false;
-          console.log("[SpeechService] isTransitioning set to false at end");
-        }
+        // Continuous mode stays open—no manual restart
+        this.isTransitioning = false;
+        console.log("[SpeechService] isTransitioning set to false at end");
       };
 
-      // Start initial recognition
       console.log("[SpeechService] Calling recognition.start()");
       this.isRecognizing = true;
       console.log("[SpeechService] isRecognizing set to true before starting");
-
-      try {
-        this.recognition.start();
-        console.log("[SpeechService] Recognition start() called successfully");
-      } catch (err) {
-        console.error("[SpeechService] Error starting recognition:", err);
-        this.isRecognizing = false;
-        console.log(
-          "[SpeechService] isRecognizing reset to false due to start exception"
-        );
-        this.isTransitioning = false;
-        console.log(
-          "[SpeechService] isTransitioning reset to false due to start exception"
-        );
-        throw err;
-      }
-
-      // Set up silence detection
-      console.log("[SpeechService] Setting up silence detection");
-      this.setupSilenceDetection();
+      this.recognition.start();
 
       console.log(
         "[SpeechService] Continuous recognition started successfully"
       );
       return {
-        isActive: () => {
-          const active = this.isRecognizing;
-          console.log(
-            `[SpeechService] isActive() called, returning: ${active}`
-          );
-          return active;
-        },
-        stop: () => {
-          console.log(
-            "[SpeechService] stop() called through returned controller"
-          );
-          return this.stopContinuousRecognition();
-        },
+        isActive: () => this.isRecognizing,
+        stop: () => this.stopContinuousRecognition(),
       };
     } catch (error) {
       console.error(
@@ -446,146 +385,17 @@ class SpeechService {
         error
       );
       this.isRecognizing = false;
-      console.log(
-        "[SpeechService] isRecognizing set to false due to exception"
-      );
       this.isTransitioning = false;
-      console.log(
-        "[SpeechService] isTransitioning set to false due to exception"
-      );
       throw error;
     }
   }
 
   setupSilenceDetection() {
-    console.log("[SpeechService] Setting up silence detection");
-
-    const checkSilence = () => {
-      if (!this.isRecognizing) {
-        console.log(
-          "[SpeechService] Silence detection stopped: not recognizing"
-        );
-        return;
-      }
-
-      if (this.isSpeaking) {
-        console.log(
-          "[SpeechService] Silence detection paused: system is speaking"
-        );
-        if (this.isRecognizing) {
-          this.silenceTimeout = setTimeout(checkSilence, 500);
-        }
-        return;
-      }
-
-      const silenceDuration = Date.now() - this.lastSpeechTime;
-      console.log(`[SpeechService] Silence duration: ${silenceDuration}ms`);
-
-      if (silenceDuration > 1000) {
-        // 1 second of silence
-        console.log(
-          "[SpeechService] Silence threshold exceeded, restarting recognition"
-        );
-        this.restartRecognition();
-      }
-
-      if (this.isRecognizing) {
-        this.silenceTimeout = setTimeout(checkSilence, 500);
-      }
-    };
-
-    console.log("[SpeechService] Starting silence detection loop");
-    this.silenceTimeout = setTimeout(checkSilence, 500);
+    console.log("[SpeechService] (silence detection disabled)");
   }
 
   restartRecognition() {
-    console.log("[SpeechService] Attempting to restart recognition");
-    console.log("[SpeechService] Current state:", {
-      isRecognizing: this.isRecognizing,
-      isSpeaking: this.isSpeaking,
-      isTransitioning: this.isTransitioning,
-    });
-
-    if (!this.isRecognizing) {
-      console.log("[SpeechService] Not restarting: not currently recognizing");
-      return;
-    }
-
-    if (this.isSpeaking) {
-      console.log("[SpeechService] Not restarting: currently speaking");
-      return;
-    }
-
-    if (this.isTransitioning) {
-      console.log("[SpeechService] Not restarting: already transitioning");
-      return;
-    }
-
-    this.isTransitioning = true;
-    console.log("[SpeechService] isTransitioning set to true for restart");
-
-    try {
-      console.log("[SpeechService] Calling recognition.stop() for restart");
-      this.recognition.stop();
-      console.log("[SpeechService] recognition.stop() called successfully");
-
-      console.log(
-        "[SpeechService] Setting timeout for 300ms to restart recognition"
-      );
-      this.restartTimeout = setTimeout(() => {
-        console.log("[SpeechService] Restart timeout triggered");
-        console.log("[SpeechService] Restart state check:", {
-          isRecognizing: this.isRecognizing,
-          isSpeaking: this.isSpeaking,
-          isTransitioning: this.isTransitioning,
-        });
-
-        if (this.isRecognizing && !this.isSpeaking) {
-          try {
-            console.log(
-              "[SpeechService] Calling recognition.start() for restart"
-            );
-            this.recognition.start();
-            console.log(
-              "[SpeechService] recognition.start() called successfully for restart"
-            );
-          } catch (error) {
-            console.error(
-              "[SpeechService] Error starting recognition during restart:",
-              error
-            );
-            this.isTransitioning = false;
-            console.log(
-              "[SpeechService] isTransitioning reset to false due to restart error"
-            );
-
-            if (error.name === "InvalidStateError") {
-              console.log(
-                "[SpeechService] InvalidStateError detected, recognition may already be running"
-              );
-              console.log(
-                "[SpeechService] Setting isRecognizing to false to reset state"
-              );
-              this.isRecognizing = false;
-            }
-          }
-        } else {
-          console.log(
-            "[SpeechService] Not restarting: conditions changed during timeout"
-          );
-          this.isTransitioning = false;
-          console.log(
-            "[SpeechService] isTransitioning reset to false due to changed conditions"
-          );
-        }
-      }, 300); // Increased delay for safer restart
-    } catch (error) {
-      console.error("[SpeechService] Error during recognition restart:", error);
-      this.isTransitioning = false;
-      console.log(
-        "[SpeechService] isTransitioning reset to false due to error"
-      );
-    }
+    console.log("[SpeechService] (restart disabled)");
   }
 
   cleanup() {
@@ -612,10 +422,9 @@ class SpeechService {
         );
       } catch (error) {
         console.log(
-          "[SpeechService] Error stopping recognition during cleanup (this is often normal):",
+          "[SpeechService] Error stopping recognition during cleanup (often normal):",
           error
         );
-        // Ignore errors during cleanup
       }
     }
 
